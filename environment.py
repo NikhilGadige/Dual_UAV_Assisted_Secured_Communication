@@ -12,6 +12,13 @@ class EnvConfig:
     dt: float = 0.1
     seed: int | None = None
     max_steps: int = 200
+    bandwidth: float = 1e6
+    noise_psd: float = 10 ** (-17.4)
+    user_power: float = 0.2
+    relay_power: float = 0.5
+    jammer_power: float = 0.5
+    alpha: float = 2.0
+    beta0: float = 1.0
 
 class UAVEnvironment:
     def __init__(self, config: EnvConfig | None = None):
@@ -68,8 +75,10 @@ class UAVEnvironment:
         self._step_counter += 1
         done = self._step_counter >= self.config.max_steps
         self._generate_fading()
+        rates = self.compute_rates()
+        reward = rates["R_sec"]
 
-        return self.get_state(), 0.0, done, {}
+        return self.get_state(), reward, done, rates
 
     def get_state(self) -> np.ndarray:
         return np.concatenate([
@@ -82,7 +91,12 @@ class UAVEnvironment:
 
     def compute_channel_gain(self, tx_pos: np.ndarray, rx_pos: np.ndarray,
                              fading: float) -> float:
-        return channel_gain(compute_distance(tx_pos, rx_pos), fading)
+        return channel_gain(
+            compute_distance(tx_pos, rx_pos),
+            fading,
+            alpha=self.config.alpha,
+            beta0=self.config.beta0,
+        )
 
     def compute_all_channel_gains(self) -> dict:
         gains = {}
@@ -109,6 +123,30 @@ class UAVEnvironment:
         print(f"  h_RB (Relay->BS)  : {gains['h_RB']:.6e}")
         print(f"  h_UE (User->Eve)  : {gains['h_UE']:.6e}")
         print(f"  h_JE (Jammer->Eve): {gains['h_JE']:.6e}")
+
+    def compute_rates(self) -> dict:
+        gains = self.compute_all_channel_gains()
+        noise_power = self.config.noise_psd * self.config.bandwidth
+
+        gamma_ur = (self.config.user_power * gains["h_UR"]) / noise_power
+        gamma_rb = (self.config.relay_power * gains["h_RB"]) / noise_power
+        r_legit = 0.5 * self.config.bandwidth * np.log2(1.0 + min(gamma_ur, gamma_rb))
+
+        gamma_e = (self.config.user_power * gains["h_UE"]) / (
+            noise_power + self.config.jammer_power * gains["h_JE"]
+        )
+        r_eve = self.config.bandwidth * np.log2(1.0 + gamma_e)
+
+        r_sec = max(r_legit - r_eve, 0.0)
+
+        return {
+            "gamma_UR": float(gamma_ur),
+            "gamma_RB": float(gamma_rb),
+            "gamma_E": float(gamma_e),
+            "R_legit": float(r_legit),
+            "R_eve": float(r_eve),
+            "R_sec": float(r_sec),
+        }
 
 def compute_distance(p1: np.ndarray, p2: np.ndarray) -> float:
     return float(np.linalg.norm(np.asarray(p1) - np.asarray(p2)))
@@ -137,6 +175,11 @@ if __name__ == "__main__":
             f"{str(np.round(user, 2)):<30} "
             f"{str(np.round(bs, 2)):<20} "
             f"{str(np.round(eve, 2)):<30}"
+        )
+        print(
+            f"       Reward(R_sec)={reward:.4f}, "
+            f"R_legit={info['R_legit']:.4f}, "
+            f"R_eve={info['R_eve']:.4f}"
         )
 
     env.print_channel_gains()
