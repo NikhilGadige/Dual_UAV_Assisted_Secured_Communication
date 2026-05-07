@@ -5,7 +5,6 @@ from environment import EnvConfig, UAVEnvironment
 BPS_TO_MBPS = 1e-6
 BITS_TO_MBITS = 1e-6
 
-
 def _unit_direction(src_xy: np.ndarray, dst_xy: np.ndarray) -> np.ndarray:
     vec = np.asarray(dst_xy) - np.asarray(src_xy)
     norm = np.linalg.norm(vec)
@@ -13,12 +12,10 @@ def _unit_direction(src_xy: np.ndarray, dst_xy: np.ndarray) -> np.ndarray:
         return np.zeros(2, dtype=float)
     return (vec / norm).astype(float)
 
-
 def random_policy(env: UAVEnvironment) -> tuple[np.ndarray, np.ndarray]:
     a_relay = np.random.uniform(-1.0, 1.0, size=2)
     a_jammer = np.random.uniform(-1.0, 1.0, size=2)
     return a_relay, a_jammer
-
 
 def distance_greedy_policy(env: UAVEnvironment) -> tuple[np.ndarray, np.ndarray]:
     # Relay targets midpoint between user and BS to balance two-hop quality.
@@ -28,7 +25,6 @@ def distance_greedy_policy(env: UAVEnvironment) -> tuple[np.ndarray, np.ndarray]
     a_relay = _unit_direction(env.relay_position[:2], relay_target_xy)
     a_jammer = _unit_direction(env.jammer_position[:2], jammer_target_xy)
     return a_relay, a_jammer
-
 
 def run_episode(env: UAVEnvironment, policy_fn) -> dict:
     env.reset()
@@ -67,7 +63,6 @@ def run_episode(env: UAVEnvironment, policy_fn) -> dict:
         "avg_R_sec_mbps": float((total_r_sec / max(steps, 1)) * BPS_TO_MBPS),
     }
 
-
 def evaluate_policy(
     policy_name: str,
     policy_fn,
@@ -101,7 +96,6 @@ def evaluate_policy(
         summary["episode_metrics"] = metrics
     return summary
 
-
 def print_summary(summary: dict) -> None:
     print(f"\nPolicy: {summary['policy']} | Episodes: {summary['episodes']}")
     print(
@@ -120,7 +114,6 @@ def print_summary(summary: dict) -> None:
     print(f"  Mean avg R_legit                 : {summary['mean_avg_R_legit_mbps']:.4f} Mbps")
     print(f"  Mean avg R_eve                   : {summary['mean_avg_R_eve_mbps']:.4f} Mbps")
     print(f"  Mean avg R_sec                   : {summary['mean_avg_R_sec_mbps']:.4f} Mbps")
-
 
 if __name__ == "__main__":
     EPISODES = 20
