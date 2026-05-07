@@ -1,0 +1,273 @@
+import csv
+import random
+from collections import deque
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+from environment import EnvConfig, UAVEnvironment
+from baselines import distance_greedy_policy, evaluate_policy, random_policy
+
+
+@dataclass
+class DQNConfig:
+    episodes: int = 400
+    gamma: float = 0.99
+    lr: float = 1e-3
+    batch_size: int = 64
+    replay_size: int = 50000
+    min_replay_size: int = 1000
+    target_update_freq: int = 200
+    epsilon_start: float = 1.0
+    epsilon_end: float = 0.05
+    epsilon_decay_steps: int = 40000
+    hidden_dim: int = 128
+    seed: int = 42
+    device: str = "cpu"
+
+
+class QNetwork(nn.Module):
+    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, action_dim),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+class ReplayBuffer:
+    def __init__(self, capacity: int):
+        self.buffer = deque(maxlen=capacity)
+
+    def add(self, s, a, r, ns, d):
+        self.buffer.append((s, a, r, ns, d))
+
+    def sample(self, batch_size: int):
+        batch = random.sample(self.buffer, batch_size)
+        s, a, r, ns, d = zip(*batch)
+        return (
+            np.asarray(s, dtype=np.float32),
+            np.asarray(a, dtype=np.int64),
+            np.asarray(r, dtype=np.float32),
+            np.asarray(ns, dtype=np.float32),
+            np.asarray(d, dtype=np.float32),
+        )
+
+    def __len__(self):
+        return len(self.buffer)
+
+
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+
+def make_action_table() -> list[tuple[np.ndarray, np.ndarray]]:
+    dirs = [
+        np.array([0.0, 0.0], dtype=np.float32),
+        np.array([1.0, 0.0], dtype=np.float32),
+        np.array([-1.0, 0.0], dtype=np.float32),
+        np.array([0.0, 1.0], dtype=np.float32),
+        np.array([0.0, -1.0], dtype=np.float32),
+        np.array([1.0, 1.0], dtype=np.float32),
+        np.array([1.0, -1.0], dtype=np.float32),
+        np.array([-1.0, 1.0], dtype=np.float32),
+        np.array([-1.0, -1.0], dtype=np.float32),
+    ]
+    table = []
+    for a_r in dirs:
+        for a_j in dirs:
+            table.append((a_r.copy(), a_j.copy()))
+    return table
+
+
+def epsilon_by_step(step: int, cfg: DQNConfig) -> float:
+    if step >= cfg.epsilon_decay_steps:
+        return cfg.epsilon_end
+    span = cfg.epsilon_start - cfg.epsilon_end
+    frac = step / max(cfg.epsilon_decay_steps, 1)
+    return cfg.epsilon_start - span * frac
+
+
+def evaluate_dqn(
+    env: UAVEnvironment,
+    q_net: QNetwork,
+    action_table: list[tuple[np.ndarray, np.ndarray]],
+    device: torch.device,
+    episodes: int = 20,
+) -> dict:
+    q_net.eval()
+    episode_sec_mbits = []
+    episode_avg_sec_mbps = []
+
+    with torch.no_grad():
+        for _ in range(episodes):
+            state = env.reset().astype(np.float32)
+            done = False
+            total_r_sec = 0.0
+            steps = 0
+            while not done:
+                s_t = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+                action_id = int(torch.argmax(q_net(s_t), dim=1).item())
+                a_relay, a_jammer = action_table[action_id]
+                next_state, _, done, info = env.step(a_relay, a_jammer)
+                total_r_sec += info["R_sec"]
+                steps += 1
+                state = next_state.astype(np.float32)
+
+            avg_r_sec_bps = total_r_sec / max(steps, 1)
+            episode_avg_sec_mbps.append(avg_r_sec_bps / 1e6)
+            episode_sec_mbits.append((total_r_sec * env.config.dt) / 1e6)
+
+    return {
+        "mean_avg_rsec_mbps": float(np.mean(episode_avg_sec_mbps)),
+        "mean_episode_secrecy_mbits": float(np.mean(episode_sec_mbits)),
+    }
+
+
+def train_dqn(
+    cfg: DQNConfig | None = None,
+    output_dir: str = "outputs/dqn",
+) -> dict:
+    cfg = cfg or DQNConfig()
+    set_seed(cfg.seed)
+
+    device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
+    env = UAVEnvironment(EnvConfig(seed=cfg.seed))
+    state_dim = env.reset().shape[0]
+    action_table = make_action_table()
+    action_dim = len(action_table)
+
+    q_net = QNetwork(state_dim, action_dim, cfg.hidden_dim).to(device)
+    target_net = QNetwork(state_dim, action_dim, cfg.hidden_dim).to(device)
+    target_net.load_state_dict(q_net.state_dict())
+    target_net.eval()
+
+    optimizer = optim.Adam(q_net.parameters(), lr=cfg.lr)
+    replay = ReplayBuffer(cfg.replay_size)
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_path = out_dir / "dqn_training_log.csv"
+
+    global_step = 0
+    rolling_rewards: list[float] = []
+    train_rows: list[dict] = []
+
+    for ep in range(1, cfg.episodes + 1):
+        state = env.reset().astype(np.float32)
+        done = False
+        ep_reward = 0.0
+        ep_rsec_bps = 0.0
+        ep_steps = 0
+
+        while not done:
+            eps = epsilon_by_step(global_step, cfg)
+            if random.random() < eps:
+                action_id = random.randrange(action_dim)
+            else:
+                with torch.no_grad():
+                    s_t = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+                    action_id = int(torch.argmax(q_net(s_t), dim=1).item())
+
+            a_relay, a_jammer = action_table[action_id]
+            next_state, reward, done, info = env.step(a_relay, a_jammer)
+            next_state = next_state.astype(np.float32)
+
+            replay.add(state, action_id, float(reward), next_state, float(done))
+            state = next_state
+            ep_reward += reward
+            ep_rsec_bps += info["R_sec"]
+            ep_steps += 1
+            global_step += 1
+
+            if len(replay) >= cfg.min_replay_size:
+                s, a, r, ns, d = replay.sample(cfg.batch_size)
+                s_t = torch.tensor(s, dtype=torch.float32, device=device)
+                a_t = torch.tensor(a, dtype=torch.int64, device=device).unsqueeze(1)
+                r_t = torch.tensor(r, dtype=torch.float32, device=device).unsqueeze(1)
+                ns_t = torch.tensor(ns, dtype=torch.float32, device=device)
+                d_t = torch.tensor(d, dtype=torch.float32, device=device).unsqueeze(1)
+
+                q_pred = q_net(s_t).gather(1, a_t)
+                with torch.no_grad():
+                    q_next = target_net(ns_t).max(dim=1, keepdim=True)[0]
+                    q_target = r_t + (1.0 - d_t) * cfg.gamma * q_next
+
+                loss = nn.MSELoss()(q_pred, q_target)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                if global_step % cfg.target_update_freq == 0:
+                    target_net.load_state_dict(q_net.state_dict())
+
+        avg_rsec_mbps = (ep_rsec_bps / max(ep_steps, 1)) / 1e6
+        ep_secrecy_mbits = (ep_rsec_bps * env.config.dt) / 1e6
+        rolling_rewards.append(avg_rsec_mbps)
+        roll100 = float(np.mean(rolling_rewards[-100:]))
+        train_rows.append(
+            {
+                "episode": ep,
+                "epsilon": eps,
+                "episode_reward_bps_step": float(ep_reward),
+                "avg_R_sec_mbps": float(avg_rsec_mbps),
+                "episode_secrecy_mbits": float(ep_secrecy_mbits),
+                "rolling100_avg_R_sec_mbps": roll100,
+            }
+        )
+
+        if ep % 25 == 0 or ep == 1 or ep == cfg.episodes:
+            print(
+                f"Episode {ep:4d}/{cfg.episodes} | eps={eps:.3f} | "
+                f"avg_R_sec={avg_rsec_mbps:.3f} Mbps | roll100={roll100:.3f} Mbps"
+            )
+
+    with log_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=list(train_rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(train_rows)
+
+    model_path = out_dir / "dqn_qnet.pt"
+    torch.save(q_net.state_dict(), model_path)
+
+    eval_env = UAVEnvironment(EnvConfig(seed=cfg.seed + 999))
+    dqn_eval = evaluate_dqn(eval_env, q_net, action_table, device=device, episodes=20)
+    random_eval = evaluate_policy("Random Walk", random_policy, episodes=20, seed=cfg.seed + 999)
+    greedy_eval = evaluate_policy(
+        "Distance-Greedy", distance_greedy_policy, episodes=20, seed=cfg.seed + 999
+    )
+
+    summary = {
+        "dqn_mean_avg_rsec_mbps": dqn_eval["mean_avg_rsec_mbps"],
+        "dqn_mean_episode_secrecy_mbits": dqn_eval["mean_episode_secrecy_mbits"],
+        "random_mean_avg_rsec_mbps": random_eval["mean_avg_R_sec_mbps"],
+        "greedy_mean_avg_rsec_mbps": greedy_eval["mean_avg_R_sec_mbps"],
+        "training_log_csv": str(log_path.resolve()),
+        "model_path": str(model_path.resolve()),
+    }
+
+    print("\nFinal comparison (evaluation episodes=20):")
+    print(f"  DQN avg secrecy rate      : {summary['dqn_mean_avg_rsec_mbps']:.4f} Mbps")
+    print(f"  Random avg secrecy rate   : {summary['random_mean_avg_rsec_mbps']:.4f} Mbps")
+    print(f"  Greedy avg secrecy rate   : {summary['greedy_mean_avg_rsec_mbps']:.4f} Mbps")
+    print(f"  DQN secrecy payload/ep    : {summary['dqn_mean_episode_secrecy_mbits']:.4f} Mbits")
+    print(f"  Saved training log        : {summary['training_log_csv']}")
+    print(f"  Saved model               : {summary['model_path']}")
+
+    return summary
+
+
+if __name__ == "__main__":
+    train_dqn()
