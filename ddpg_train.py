@@ -1,4 +1,5 @@
 import csv
+import argparse
 import random
 from collections import deque
 from dataclasses import dataclass
@@ -29,6 +30,12 @@ class DDPGConfig:
     noise_decay_steps: int = 50000
     seed: int = 42
     device: str = "cpu"
+    fading_model: str = "rician"
+    rician_k: float = 5.0
+
+
+def make_env_config(seed: int, cfg: DDPGConfig) -> EnvConfig:
+    return EnvConfig(seed=seed, fading_model=cfg.fading_model, rician_k=cfg.rician_k)
 
 
 class Actor(nn.Module):
@@ -103,8 +110,8 @@ def soft_update(src: nn.Module, dst: nn.Module, tau: float) -> None:
         p_dst.data.copy_(tau * p_src.data + (1.0 - tau) * p_dst.data)
 
 
-def split_action(action_4d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    return action_4d[:2], action_4d[2:]
+def split_action(action_5d: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
+    return action_5d[:2], action_5d[2:4], float(action_5d[4])
 
 
 def evaluate_ddpg(
@@ -126,8 +133,8 @@ def evaluate_ddpg(
             while not done:
                 s_t = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
                 action = actor(s_t).cpu().numpy()[0]
-                a_relay, a_jammer = split_action(action)
-                next_state, _, done, info = env.step(a_relay, a_jammer)
+                a_relay, a_jammer, jammer_power = split_action(action)
+                next_state, _, done, info = env.step(a_relay, a_jammer, jammer_power)
                 total_r_sec += info["R_sec"]
                 steps += 1
                 state = next_state.astype(np.float32)
@@ -147,9 +154,9 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/ddpg") 
     set_seed(cfg.seed)
 
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
-    env = UAVEnvironment(EnvConfig(seed=cfg.seed))
+    env = UAVEnvironment(make_env_config(cfg.seed, cfg))
     state_dim = env.reset().shape[0]
-    action_dim = 4
+    action_dim = 5
 
     actor = Actor(state_dim, action_dim, cfg.hidden_dim).to(device)
     critic = Critic(state_dim, action_dim, cfg.hidden_dim).to(device)
@@ -175,6 +182,7 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/ddpg") 
         done = False
         ep_reward = 0.0
         ep_rsec_bps = 0.0
+        ep_energy_j = 0.0
         ep_steps = 0
 
         while not done:
@@ -184,14 +192,15 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/ddpg") 
                 action = actor(s_t).cpu().numpy()[0]
             action = np.clip(action + np.random.normal(0.0, noise_std, size=action_dim), -1.0, 1.0)
 
-            a_relay, a_jammer = split_action(action)
-            next_state, reward, done, info = env.step(a_relay, a_jammer)
+            a_relay, a_jammer, jammer_power = split_action(action)
+            next_state, reward, done, info = env.step(a_relay, a_jammer, jammer_power)
             next_state = next_state.astype(np.float32)
 
             replay.add(state, action, float(reward), next_state, float(done))
             state = next_state
             ep_reward += reward
             ep_rsec_bps += info["R_sec"]
+            ep_energy_j += info["total_energy_j"]
             ep_steps += 1
             global_step += 1
 
@@ -233,6 +242,7 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/ddpg") 
                 "episode_reward_bps_step": float(ep_reward),
                 "avg_R_sec_mbps": float(avg_rsec_mbps),
                 "episode_secrecy_mbits": float(ep_secrecy_mbits),
+                "avg_energy_j": float(ep_energy_j / max(ep_steps, 1)),
                 "rolling100_avg_R_sec_mbps": roll100,
             }
         )
@@ -251,12 +261,25 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/ddpg") 
     actor_path = out_dir / "ddpg_actor.pt"
     torch.save(actor.state_dict(), actor_path)
 
-    eval_env = UAVEnvironment(EnvConfig(seed=cfg.seed + 999))
+    eval_env = UAVEnvironment(make_env_config(cfg.seed + 999, cfg))
     ddpg_eval = evaluate_ddpg(eval_env, actor, device=device, episodes=20)
-    random_eval = evaluate_policy("Random Walk", random_policy, episodes=20, seed=cfg.seed + 999)
-    greedy_eval = evaluate_policy("Distance-Greedy", distance_greedy_policy, episodes=20, seed=cfg.seed + 999)
+    random_eval = evaluate_policy(
+        "Random Walk",
+        random_policy,
+        episodes=20,
+        seed=cfg.seed + 999,
+        env_config=make_env_config(cfg.seed + 999, cfg),
+    )
+    greedy_eval = evaluate_policy(
+        "Distance-Greedy",
+        distance_greedy_policy,
+        episodes=20,
+        seed=cfg.seed + 999,
+        env_config=make_env_config(cfg.seed + 999, cfg),
+    )
 
     summary = {
+        "fading_model": cfg.fading_model,
         "ddpg_mean_avg_rsec_mbps": ddpg_eval["mean_avg_rsec_mbps"],
         "ddpg_mean_episode_secrecy_mbits": ddpg_eval["mean_episode_secrecy_mbits"],
         "random_mean_avg_rsec_mbps": random_eval["mean_avg_R_sec_mbps"],
@@ -266,6 +289,7 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/ddpg") 
     }
 
     print("\nFinal comparison (evaluation episodes=20):")
+    print(f"  Channel model            : {summary['fading_model']}")
     print(f"  DDPG avg secrecy rate     : {summary['ddpg_mean_avg_rsec_mbps']:.4f} Mbps")
     print(f"  Random avg secrecy rate   : {summary['random_mean_avg_rsec_mbps']:.4f} Mbps")
     print(f"  Greedy avg secrecy rate   : {summary['greedy_mean_avg_rsec_mbps']:.4f} Mbps")
@@ -275,5 +299,30 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/ddpg") 
     return summary
 
 
+def _parse_args():
+    parser = argparse.ArgumentParser(description="Train DDPG for dual-UAV secrecy environment.")
+    parser.add_argument("--episodes", type=int, default=400, help="Training episodes")
+    parser.add_argument(
+        "--channel-model",
+        type=str,
+        default="rician",
+        choices=["rician", "rayleigh"],
+        help="Fading model to use in the environment",
+    )
+    parser.add_argument("--rician-k", type=float, default=5.0, help="Rician K-factor")
+    parser.add_argument("--output-dir", type=str, default="outputs/ddpg", help="Output directory")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    train_ddpg()
+    args = _parse_args()
+    train_ddpg(
+        DDPGConfig(
+            episodes=args.episodes,
+            seed=args.seed,
+            fading_model=args.channel_model,
+            rician_k=args.rician_k,
+        ),
+        output_dir=args.output_dir,
+    )

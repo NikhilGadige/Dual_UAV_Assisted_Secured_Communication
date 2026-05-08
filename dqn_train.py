@@ -1,4 +1,5 @@
 import csv
+import argparse
 import random
 from collections import deque
 from dataclasses import dataclass
@@ -28,6 +29,12 @@ class DQNConfig:
     hidden_dim: int = 128
     seed: int = 42
     device: str = "cpu"
+    fading_model: str = "rician"
+    rician_k: float = 5.0
+
+
+def make_env_config(seed: int, cfg: DQNConfig) -> EnvConfig:
+    return EnvConfig(seed=seed, fading_model=cfg.fading_model, rician_k=cfg.rician_k)
 
 
 class QNetwork(nn.Module):
@@ -73,9 +80,8 @@ def set_seed(seed: int) -> None:
     torch.manual_seed(seed)
 
 
-def make_action_table() -> list[tuple[np.ndarray, np.ndarray]]:
+def make_action_table() -> list[tuple[np.ndarray, np.ndarray, float]]:
     dirs = [
-        np.array([0.0, 0.0], dtype=np.float32),
         np.array([1.0, 0.0], dtype=np.float32),
         np.array([-1.0, 0.0], dtype=np.float32),
         np.array([0.0, 1.0], dtype=np.float32),
@@ -85,10 +91,21 @@ def make_action_table() -> list[tuple[np.ndarray, np.ndarray]]:
         np.array([-1.0, 1.0], dtype=np.float32),
         np.array([-1.0, -1.0], dtype=np.float32),
     ]
+    speed_levels = [0.0, 0.5, 1.0]
+    power_levels = [-1.0, 0.0, 1.0]
     table = []
-    for a_r in dirs:
-        for a_j in dirs:
-            table.append((a_r.copy(), a_j.copy()))
+    for relay_speed in speed_levels:
+        relay_commands = [np.zeros(2, dtype=np.float32)] if relay_speed == 0.0 else [
+            relay_speed * (direction / np.linalg.norm(direction)) for direction in dirs
+        ]
+        for jammer_speed in speed_levels:
+            jammer_commands = [np.zeros(2, dtype=np.float32)] if jammer_speed == 0.0 else [
+                jammer_speed * (direction / np.linalg.norm(direction)) for direction in dirs
+            ]
+            for a_r in relay_commands:
+                for a_j in jammer_commands:
+                    for jammer_power in power_levels:
+                        table.append((a_r.astype(np.float32), a_j.astype(np.float32), float(jammer_power)))
     return table
 
 
@@ -103,7 +120,7 @@ def epsilon_by_step(step: int, cfg: DQNConfig) -> float:
 def evaluate_dqn(
     env: UAVEnvironment,
     q_net: QNetwork,
-    action_table: list[tuple[np.ndarray, np.ndarray]],
+    action_table: list[tuple[np.ndarray, np.ndarray, float]],
     device: torch.device,
     episodes: int = 20,
 ) -> dict:
@@ -120,8 +137,8 @@ def evaluate_dqn(
             while not done:
                 s_t = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
                 action_id = int(torch.argmax(q_net(s_t), dim=1).item())
-                a_relay, a_jammer = action_table[action_id]
-                next_state, _, done, info = env.step(a_relay, a_jammer)
+                a_relay, a_jammer, jammer_power = action_table[action_id]
+                next_state, _, done, info = env.step(a_relay, a_jammer, jammer_power)
                 total_r_sec += info["R_sec"]
                 steps += 1
                 state = next_state.astype(np.float32)
@@ -144,7 +161,7 @@ def train_dqn(
     set_seed(cfg.seed)
 
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
-    env = UAVEnvironment(EnvConfig(seed=cfg.seed))
+    env = UAVEnvironment(make_env_config(cfg.seed, cfg))
     state_dim = env.reset().shape[0]
     action_table = make_action_table()
     action_dim = len(action_table)
@@ -170,6 +187,7 @@ def train_dqn(
         done = False
         ep_reward = 0.0
         ep_rsec_bps = 0.0
+        ep_energy_j = 0.0
         ep_steps = 0
 
         while not done:
@@ -181,14 +199,15 @@ def train_dqn(
                     s_t = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
                     action_id = int(torch.argmax(q_net(s_t), dim=1).item())
 
-            a_relay, a_jammer = action_table[action_id]
-            next_state, reward, done, info = env.step(a_relay, a_jammer)
+            a_relay, a_jammer, jammer_power = action_table[action_id]
+            next_state, reward, done, info = env.step(a_relay, a_jammer, jammer_power)
             next_state = next_state.astype(np.float32)
 
             replay.add(state, action_id, float(reward), next_state, float(done))
             state = next_state
             ep_reward += reward
             ep_rsec_bps += info["R_sec"]
+            ep_energy_j += info["total_energy_j"]
             ep_steps += 1
             global_step += 1
 
@@ -224,6 +243,7 @@ def train_dqn(
                 "episode_reward_bps_step": float(ep_reward),
                 "avg_R_sec_mbps": float(avg_rsec_mbps),
                 "episode_secrecy_mbits": float(ep_secrecy_mbits),
+                "avg_energy_j": float(ep_energy_j / max(ep_steps, 1)),
                 "rolling100_avg_R_sec_mbps": roll100,
             }
         )
@@ -242,14 +262,25 @@ def train_dqn(
     model_path = out_dir / "dqn_qnet.pt"
     torch.save(q_net.state_dict(), model_path)
 
-    eval_env = UAVEnvironment(EnvConfig(seed=cfg.seed + 999))
+    eval_env = UAVEnvironment(make_env_config(cfg.seed + 999, cfg))
     dqn_eval = evaluate_dqn(eval_env, q_net, action_table, device=device, episodes=20)
-    random_eval = evaluate_policy("Random Walk", random_policy, episodes=20, seed=cfg.seed + 999)
+    random_eval = evaluate_policy(
+        "Random Walk",
+        random_policy,
+        episodes=20,
+        seed=cfg.seed + 999,
+        env_config=make_env_config(cfg.seed + 999, cfg),
+    )
     greedy_eval = evaluate_policy(
-        "Distance-Greedy", distance_greedy_policy, episodes=20, seed=cfg.seed + 999
+        "Distance-Greedy",
+        distance_greedy_policy,
+        episodes=20,
+        seed=cfg.seed + 999,
+        env_config=make_env_config(cfg.seed + 999, cfg),
     )
 
     summary = {
+        "fading_model": cfg.fading_model,
         "dqn_mean_avg_rsec_mbps": dqn_eval["mean_avg_rsec_mbps"],
         "dqn_mean_episode_secrecy_mbits": dqn_eval["mean_episode_secrecy_mbits"],
         "random_mean_avg_rsec_mbps": random_eval["mean_avg_R_sec_mbps"],
@@ -259,6 +290,7 @@ def train_dqn(
     }
 
     print("\nFinal comparison (evaluation episodes=20):")
+    print(f"  Channel model            : {summary['fading_model']}")
     print(f"  DQN avg secrecy rate      : {summary['dqn_mean_avg_rsec_mbps']:.4f} Mbps")
     print(f"  Random avg secrecy rate   : {summary['random_mean_avg_rsec_mbps']:.4f} Mbps")
     print(f"  Greedy avg secrecy rate   : {summary['greedy_mean_avg_rsec_mbps']:.4f} Mbps")
@@ -269,5 +301,30 @@ def train_dqn(
     return summary
 
 
+def _parse_args():
+    parser = argparse.ArgumentParser(description="Train DQN for dual-UAV secrecy environment.")
+    parser.add_argument("--episodes", type=int, default=400, help="Training episodes")
+    parser.add_argument(
+        "--channel-model",
+        type=str,
+        default="rician",
+        choices=["rician", "rayleigh"],
+        help="Fading model to use in the environment",
+    )
+    parser.add_argument("--rician-k", type=float, default=5.0, help="Rician K-factor")
+    parser.add_argument("--output-dir", type=str, default="outputs/dqn", help="Output directory")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    train_dqn()
+    args = _parse_args()
+    train_dqn(
+        DQNConfig(
+            episodes=args.episodes,
+            seed=args.seed,
+            fading_model=args.channel_model,
+            rician_k=args.rician_k,
+        ),
+        output_dir=args.output_dir,
+    )

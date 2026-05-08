@@ -1,9 +1,11 @@
 import numpy as np
+from dataclasses import replace
 
 from environment import EnvConfig, UAVEnvironment
 
 BPS_TO_MBPS = 1e-6
 BITS_TO_MBITS = 1e-6
+
 
 def _unit_direction(src_xy: np.ndarray, dst_xy: np.ndarray) -> np.ndarray:
     vec = np.asarray(dst_xy) - np.asarray(src_xy)
@@ -12,19 +14,24 @@ def _unit_direction(src_xy: np.ndarray, dst_xy: np.ndarray) -> np.ndarray:
         return np.zeros(2, dtype=float)
     return (vec / norm).astype(float)
 
-def random_policy(env: UAVEnvironment) -> tuple[np.ndarray, np.ndarray]:
+
+def random_policy(env: UAVEnvironment) -> tuple[np.ndarray, np.ndarray, float]:
     a_relay = np.random.uniform(-1.0, 1.0, size=2)
     a_jammer = np.random.uniform(-1.0, 1.0, size=2)
-    return a_relay, a_jammer
+    jammer_power = float(np.random.uniform(-1.0, 1.0))
+    return a_relay, a_jammer, jammer_power
 
-def distance_greedy_policy(env: UAVEnvironment) -> tuple[np.ndarray, np.ndarray]:
+
+def distance_greedy_policy(env: UAVEnvironment) -> tuple[np.ndarray, np.ndarray, float]:
     # Relay targets midpoint between user and BS to balance two-hop quality.
     relay_target_xy = 0.5 * (env.user_position[:2] + env.bs_position[:2])
     jammer_target_xy = env.eve_position[:2]
 
     a_relay = _unit_direction(env.relay_position[:2], relay_target_xy)
     a_jammer = _unit_direction(env.jammer_position[:2], jammer_target_xy)
-    return a_relay, a_jammer
+    jammer_power = 1.0
+    return a_relay, a_jammer, jammer_power
+
 
 def run_episode(env: UAVEnvironment, policy_fn) -> dict:
     env.reset()
@@ -33,12 +40,13 @@ def run_episode(env: UAVEnvironment, policy_fn) -> dict:
     total_r_eve = 0.0
     total_r_sec = 0.0
     total_secrecy_bits = 0.0
+    total_energy_j = 0.0
 
     done = False
     steps = 0
     while not done:
-        a_relay, a_jammer = policy_fn(env)
-        _, reward, done, info = env.step(a_relay, a_jammer)
+        a_relay, a_jammer, jammer_power = policy_fn(env)
+        _, reward, done, info = env.step(a_relay, a_jammer, jammer_power)
 
         steps += 1
         total_reward += reward
@@ -46,6 +54,7 @@ def run_episode(env: UAVEnvironment, policy_fn) -> dict:
         total_r_eve += info["R_eve"]
         total_r_sec += info["R_sec"]
         total_secrecy_bits += info["R_sec"] * env.config.dt
+        total_energy_j += info["total_energy_j"]
 
     return {
         "steps": steps,
@@ -53,15 +62,18 @@ def run_episode(env: UAVEnvironment, policy_fn) -> dict:
         "episode_secrecy_throughput_bps_step": float(total_r_sec),
         "episode_secrecy_bits": float(total_secrecy_bits),
         "episode_secrecy_mbits": float(total_secrecy_bits * BITS_TO_MBITS),
+        "episode_energy_j": float(total_energy_j),
         "avg_step_reward_bps": float(total_reward / max(steps, 1)),
         "avg_R_legit_bps": float(total_r_legit / max(steps, 1)),
         "avg_R_eve_bps": float(total_r_eve / max(steps, 1)),
         "avg_R_sec_bps": float(total_r_sec / max(steps, 1)),
+        "avg_energy_j": float(total_energy_j / max(steps, 1)),
         "avg_step_reward_mbps": float((total_reward / max(steps, 1)) * BPS_TO_MBPS),
         "avg_R_legit_mbps": float((total_r_legit / max(steps, 1)) * BPS_TO_MBPS),
         "avg_R_eve_mbps": float((total_r_eve / max(steps, 1)) * BPS_TO_MBPS),
         "avg_R_sec_mbps": float((total_r_sec / max(steps, 1)) * BPS_TO_MBPS),
     }
+
 
 def evaluate_policy(
     policy_name: str,
@@ -69,8 +81,9 @@ def evaluate_policy(
     episodes: int = 20,
     seed: int = 42,
     return_episode_metrics: bool = False,
+    env_config: EnvConfig | None = None,
 ) -> dict:
-    config = EnvConfig(seed=seed)
+    config = replace(env_config or EnvConfig(), seed=seed)
     env = UAVEnvironment(config)
     metrics = [run_episode(env, policy_fn) for _ in range(episodes)]
 
@@ -83,18 +96,22 @@ def evaluate_policy(
         ),
         "mean_episode_secrecy_bits": float(np.mean([m["episode_secrecy_bits"] for m in metrics])),
         "mean_episode_secrecy_mbits": float(np.mean([m["episode_secrecy_mbits"] for m in metrics])),
+        "mean_episode_energy_j": float(np.mean([m["episode_energy_j"] for m in metrics])),
         "mean_avg_step_reward_bps": float(np.mean([m["avg_step_reward_bps"] for m in metrics])),
         "mean_avg_R_legit_bps": float(np.mean([m["avg_R_legit_bps"] for m in metrics])),
         "mean_avg_R_eve_bps": float(np.mean([m["avg_R_eve_bps"] for m in metrics])),
         "mean_avg_R_sec_bps": float(np.mean([m["avg_R_sec_bps"] for m in metrics])),
+        "mean_avg_energy_j": float(np.mean([m["avg_energy_j"] for m in metrics])),
         "mean_avg_step_reward_mbps": float(np.mean([m["avg_step_reward_mbps"] for m in metrics])),
         "mean_avg_R_legit_mbps": float(np.mean([m["avg_R_legit_mbps"] for m in metrics])),
         "mean_avg_R_eve_mbps": float(np.mean([m["avg_R_eve_mbps"] for m in metrics])),
         "mean_avg_R_sec_mbps": float(np.mean([m["avg_R_sec_mbps"] for m in metrics])),
+        "fading_model": config.fading_model,
     }
     if return_episode_metrics:
         summary["episode_metrics"] = metrics
     return summary
+
 
 def print_summary(summary: dict) -> None:
     print(f"\nPolicy: {summary['policy']} | Episodes: {summary['episodes']}")
@@ -110,10 +127,13 @@ def print_summary(summary: dict) -> None:
         "  Mean episode secrecy payload     : "
         f"{summary['mean_episode_secrecy_mbits']:.4f} Mbits"
     )
+    print(f"  Mean episode energy              : {summary['mean_episode_energy_j']:.4f} J")
     print(f"  Mean avg step reward             : {summary['mean_avg_step_reward_mbps']:.4f} Mbps")
     print(f"  Mean avg R_legit                 : {summary['mean_avg_R_legit_mbps']:.4f} Mbps")
     print(f"  Mean avg R_eve                   : {summary['mean_avg_R_eve_mbps']:.4f} Mbps")
     print(f"  Mean avg R_sec                   : {summary['mean_avg_R_sec_mbps']:.4f} Mbps")
+    print(f"  Mean avg energy                  : {summary['mean_avg_energy_j']:.4f} J")
+
 
 if __name__ == "__main__":
     EPISODES = 20

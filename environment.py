@@ -9,6 +9,7 @@ class EnvConfig:
     relay_altitude: float = 50.0
     jammer_altitude: float = 50.0
     max_speed: float = 20.0
+    max_acceleration: float = 10.0
     dt: float = 0.1
     seed: int | None = None
     max_steps: int = 200
@@ -16,9 +17,21 @@ class EnvConfig:
     noise_psd: float = 10 ** (-17.4)
     user_power: float = 0.2
     relay_power: float = 0.5
-    jammer_power: float = 0.5
+    jammer_power_min: float = 0.0
+    jammer_power_max: float = 0.5
     alpha: float = 2.0
     beta0: float = 1.0
+    fading_model: str = "rician"
+    rician_k: float = 5.0
+    relay_battery_joules: float = 5000.0
+    jammer_battery_joules: float = 5000.0
+    relay_hover_power_watts: float = 12.0
+    jammer_hover_power_watts: float = 12.0
+    relay_motion_power_coeff: float = 0.06
+    jammer_motion_power_coeff: float = 0.06
+    jammer_rf_power_coeff: float = 1.0
+    energy_reward_weight: float = 1e4
+    battery_depletion_penalty: float = 5e5
 
 class UAVEnvironment:
     def __init__(self, config: EnvConfig | None = None):
@@ -29,6 +42,11 @@ class UAVEnvironment:
         self.bs_position = np.array([0.0, 0.0, 0.0])
         self._step_counter = 0
         self.fading = {"UR": 0.0, "RB": 0.0, "UE": 0.0, "JE": 0.0}
+        self.current_jammer_power = self.config.jammer_power_max
+        self.relay_velocity = np.zeros(2, dtype=float)
+        self.jammer_velocity = np.zeros(2, dtype=float)
+        self.relay_battery = self.config.relay_battery_joules
+        self.jammer_battery = self.config.jammer_battery_joules
 
     def _random_position_2d(self) -> np.ndarray:
         return np.array([
@@ -45,25 +63,78 @@ class UAVEnvironment:
     def reset(self) -> np.ndarray:
         self._step_counter = 0
         self._reset_entity_positions()
+        self.current_jammer_power = self.config.jammer_power_max
+        self.relay_velocity = np.zeros(2, dtype=float)
+        self.jammer_velocity = np.zeros(2, dtype=float)
+        self.relay_battery = self.config.relay_battery_joules
+        self.jammer_battery = self.config.jammer_battery_joules
         self._generate_fading()
         return self.get_state()
 
-    def _generate_fading(self, model: str = "rician", K: float = 5.0) -> None:
-        self.fading["UR"] = generate_fading(model, K)
-        self.fading["RB"] = generate_fading(model, K)
-        self.fading["UE"] = generate_fading(model, K)
-        self.fading["JE"] = generate_fading(model, K)
+    def _generate_fading(self) -> None:
+        self.fading["UR"] = generate_fading(self.config.fading_model, self.config.rician_k)
+        self.fading["RB"] = generate_fading(self.config.fading_model, self.config.rician_k)
+        self.fading["UE"] = generate_fading(self.config.fading_model, self.config.rician_k)
+        self.fading["JE"] = generate_fading(self.config.fading_model, self.config.rician_k)
 
     def _clip_to_bounds(self, pos: np.ndarray, altitude: float) -> np.ndarray:
         xy = np.clip(pos[:2], -self.half_area, self.half_area)
         return np.array([xy[0], xy[1], altitude])
 
-    def step(self, action_relay: np.ndarray, action_jammer: np.ndarray) -> Tuple[np.ndarray, float, bool, dict]:
+    def _scale_jammer_power(self, action_jammer_power: float) -> float:
+        action_jammer_power = float(np.clip(action_jammer_power, -1.0, 1.0))
+        power_span = self.config.jammer_power_max - self.config.jammer_power_min
+        return self.config.jammer_power_min + 0.5 * (action_jammer_power + 1.0) * power_span
+
+    def _update_velocity(self, velocity: np.ndarray, action: np.ndarray) -> np.ndarray:
+        target_velocity = np.clip(action, -1.0, 1.0) * self.config.max_speed
+        delta_v = target_velocity - velocity
+        max_delta = self.config.max_acceleration * self.config.dt
+        delta_norm = np.linalg.norm(delta_v)
+        if delta_norm > max_delta > 0.0:
+            delta_v = delta_v * (max_delta / delta_norm)
+        new_velocity = velocity + delta_v
+        speed = np.linalg.norm(new_velocity)
+        if speed > self.config.max_speed > 0.0:
+            new_velocity = new_velocity * (self.config.max_speed / speed)
+        return new_velocity
+
+    def _compute_energy_usage(self) -> dict:
+        relay_speed = np.linalg.norm(self.relay_velocity)
+        jammer_speed = np.linalg.norm(self.jammer_velocity)
+        relay_power_draw = (
+            self.config.relay_hover_power_watts
+            + self.config.relay_motion_power_coeff * relay_speed ** 2
+        )
+        jammer_power_draw = (
+            self.config.jammer_hover_power_watts
+            + self.config.jammer_motion_power_coeff * jammer_speed ** 2
+            + self.config.jammer_rf_power_coeff * self.current_jammer_power
+        )
+        relay_energy = relay_power_draw * self.config.dt
+        jammer_energy = jammer_power_draw * self.config.dt
+        return {
+            "relay_speed": float(relay_speed),
+            "jammer_speed": float(jammer_speed),
+            "relay_energy": float(relay_energy),
+            "jammer_energy": float(jammer_energy),
+            "total_energy": float(relay_energy + jammer_energy),
+        }
+
+    def step(
+        self,
+        action_relay: np.ndarray,
+        action_jammer: np.ndarray,
+        action_jammer_power: float = 1.0,
+    ) -> Tuple[np.ndarray, float, bool, dict]:
         action_relay = np.clip(action_relay, -1.0, 1.0)
         action_jammer = np.clip(action_jammer, -1.0, 1.0)
+        self.current_jammer_power = self._scale_jammer_power(action_jammer_power)
 
-        delta_relay = np.append(action_relay * self.config.max_speed * self.config.dt, 0.0)
-        delta_jammer = np.append(action_jammer * self.config.max_speed * self.config.dt, 0.0)
+        self.relay_velocity = self._update_velocity(self.relay_velocity, action_relay)
+        self.jammer_velocity = self._update_velocity(self.jammer_velocity, action_jammer)
+        delta_relay = np.append(self.relay_velocity * self.config.dt, 0.0)
+        delta_jammer = np.append(self.jammer_velocity * self.config.dt, 0.0)
 
         self.relay_position = self._clip_to_bounds(
             self.relay_position + delta_relay, self.config.relay_altitude
@@ -73,20 +144,69 @@ class UAVEnvironment:
         )
 
         self._step_counter += 1
-        done = self._step_counter >= self.config.max_steps
+        energy = self._compute_energy_usage()
+        self.relay_battery = max(0.0, self.relay_battery - energy["relay_energy"])
+        self.jammer_battery = max(0.0, self.jammer_battery - energy["jammer_energy"])
+        battery_depleted = self.relay_battery <= 0.0 or self.jammer_battery <= 0.0
+        done = self._step_counter >= self.config.max_steps or battery_depleted
         self._generate_fading()
         rates = self.compute_rates()
-        reward = rates["R_sec"]
+        energy_penalty = self.config.energy_reward_weight * energy["total_energy"]
+        reward = rates["R_sec"] - energy_penalty
+        if battery_depleted:
+            reward -= self.config.battery_depletion_penalty
+        rates.update(
+            {
+                "reward": float(reward),
+                "energy_penalty": float(energy_penalty),
+                "relay_energy_j": energy["relay_energy"],
+                "jammer_energy_j": energy["jammer_energy"],
+                "total_energy_j": energy["total_energy"],
+                "relay_speed_mps": energy["relay_speed"],
+                "jammer_speed_mps": energy["jammer_speed"],
+                "relay_battery_j": float(self.relay_battery),
+                "jammer_battery_j": float(self.jammer_battery),
+                "battery_depleted": bool(battery_depleted),
+            }
+        )
 
         return self.get_state(), reward, done, rates
 
     def get_state(self) -> np.ndarray:
+        gains = self.compute_all_channel_gains()
+        rates = self.compute_rates(gains)
+        distances = self.compute_distances()
+
         return np.concatenate([
             self.relay_position,
             self.jammer_position,
             self.user_position,
             self.bs_position,
             self.eve_position,
+            self.relay_velocity,
+            self.jammer_velocity,
+            np.array([
+                distances["d_UR"],
+                distances["d_RB"],
+                distances["d_UE"],
+                distances["d_JE"],
+            ], dtype=float),
+            np.array([
+                gains["h_UR"],
+                gains["h_RB"],
+                gains["h_UE"],
+                gains["h_JE"],
+            ], dtype=float),
+            np.array([
+                rates["gamma_UR"],
+                rates["gamma_RB"],
+                rates["gamma_E"],
+                self.current_jammer_power,
+            ], dtype=float),
+            np.array([
+                self.relay_battery,
+                self.jammer_battery,
+            ], dtype=float),
         ])
 
     def compute_channel_gain(self, tx_pos: np.ndarray, rx_pos: np.ndarray,
@@ -110,22 +230,32 @@ class UAVEnvironment:
             self.jammer_position, self.eve_position, self.fading["JE"])
         return gains
 
+    def compute_distances(self) -> dict:
+        return {
+            "d_UR": compute_distance(self.user_position, self.relay_position),
+            "d_RB": compute_distance(self.relay_position, self.bs_position),
+            "d_UE": compute_distance(self.user_position, self.eve_position),
+            "d_JE": compute_distance(self.jammer_position, self.eve_position),
+        }
+
     def print_channel_gains(self, gains: dict | None = None) -> None:
         if gains is None:
             gains = self.compute_all_channel_gains()
         print("\n-> Fading Values ")
-        print(f"  f_UR (Rician)     : {self.fading['UR']:.6f}")
-        print(f"  f_RB (Rician)     : {self.fading['RB']:.6f}")
-        print(f"  f_UE (Rician)     : {self.fading['UE']:.6f}")
-        print(f"  f_JE (Rician)     : {self.fading['JE']:.6f}")
+        model_label = self.config.fading_model.capitalize()
+        print(f"  f_UR ({model_label})     : {self.fading['UR']:.6f}")
+        print(f"  f_RB ({model_label})     : {self.fading['RB']:.6f}")
+        print(f"  f_UE ({model_label})     : {self.fading['UE']:.6f}")
+        print(f"  f_JE ({model_label})     : {self.fading['JE']:.6f}")
         print("\n-> Channel Gains ")
         print(f"  h_UR (User->Relay): {gains['h_UR']:.6e}")
         print(f"  h_RB (Relay->BS)  : {gains['h_RB']:.6e}")
         print(f"  h_UE (User->Eve)  : {gains['h_UE']:.6e}")
         print(f"  h_JE (Jammer->Eve): {gains['h_JE']:.6e}")
 
-    def compute_rates(self) -> dict:
-        gains = self.compute_all_channel_gains()
+    def compute_rates(self, gains: dict | None = None) -> dict:
+        if gains is None:
+            gains = self.compute_all_channel_gains()
         noise_power = self.config.noise_psd * self.config.bandwidth
 
         gamma_ur = (self.config.user_power * gains["h_UR"]) / noise_power
@@ -133,7 +263,7 @@ class UAVEnvironment:
         r_legit = 0.5 * self.config.bandwidth * np.log2(1.0 + min(gamma_ur, gamma_rb))
 
         gamma_e = (self.config.user_power * gains["h_UE"]) / (
-            noise_power + self.config.jammer_power * gains["h_JE"]
+            noise_power + self.current_jammer_power * gains["h_JE"]
         )
         r_eve = self.config.bandwidth * np.log2(1.0 + gamma_e)
 
@@ -146,6 +276,8 @@ class UAVEnvironment:
             "R_legit": float(r_legit),
             "R_eve": float(r_eve),
             "R_sec": float(r_sec),
+            "jammer_power": float(self.current_jammer_power),
+            "fading_model": self.config.fading_model,
         }
 
 def compute_distance(p1: np.ndarray, p2: np.ndarray) -> float:
@@ -165,7 +297,7 @@ if __name__ == "__main__":
         state, reward, done, info = env.step(a_relay, a_jammer)
 
         relay, jammer, user, bs, eve = (
-            state[:3], state[3:6], state[6:9], state[9:12], state[12:]
+            state[:3], state[3:6], state[6:9], state[9:12], state[12:15]
         )
 
         print(
