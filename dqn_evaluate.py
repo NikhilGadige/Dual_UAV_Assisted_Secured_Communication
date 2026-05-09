@@ -15,12 +15,15 @@ def evaluate_dqn_multi_seed(
     episodes_per_seed: int = 20,
     seeds: list[int] | None = None,
     output_dir: str = "outputs/dqn_eval",
+    channel_model: str = "rician",
+    rician_k: float = 5.0,
 ) -> dict:
     if seeds is None:
         seeds = [7, 21, 42, 84, 168]
 
     action_table = make_action_table()
-    state_dim = UAVEnvironment(EnvConfig(seed=0)).reset().shape[0]
+    env_cfg = EnvConfig(seed=0, fading_model=channel_model, rician_k=rician_k)
+    state_dim = UAVEnvironment(env_cfg).reset().shape[0]
     action_dim = len(action_table)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -30,16 +33,28 @@ def evaluate_dqn_multi_seed(
 
     rows = []
     for seed in seeds:
-        env = UAVEnvironment(EnvConfig(seed=seed))
+        eval_cfg = EnvConfig(seed=seed, fading_model=channel_model, rician_k=rician_k)
+        env = UAVEnvironment(eval_cfg)
         dqn = evaluate_dqn(env, q_net, action_table, device=device, episodes=episodes_per_seed)
-        rnd = evaluate_policy("Random Walk", random_policy, episodes=episodes_per_seed, seed=seed)
+        rnd = evaluate_policy(
+            "Random Walk",
+            random_policy,
+            episodes=episodes_per_seed,
+            seed=seed,
+            env_config=eval_cfg,
+        )
         grd = evaluate_policy(
-            "Distance-Greedy", distance_greedy_policy, episodes=episodes_per_seed, seed=seed
+            "Distance-Greedy",
+            distance_greedy_policy,
+            episodes=episodes_per_seed,
+            seed=seed,
+            env_config=eval_cfg,
         )
 
         rows.append(
             {
                 "seed": seed,
+                "fading_model": channel_model,
                 "dqn_avg_rsec_mbps": dqn["mean_avg_rsec_mbps"],
                 "dqn_episode_secrecy_mbits": dqn["mean_episode_secrecy_mbits"],
                 "random_avg_rsec_mbps": rnd["mean_avg_R_sec_mbps"],
@@ -56,6 +71,7 @@ def evaluate_dqn_multi_seed(
         writer.writerows(rows)
 
     agg = {
+        "fading_model": channel_model,
         "dqn_avg_rsec_mbps": float(np.mean([r["dqn_avg_rsec_mbps"] for r in rows])),
         "random_avg_rsec_mbps": float(np.mean([r["random_avg_rsec_mbps"] for r in rows])),
         "greedy_avg_rsec_mbps": float(np.mean([r["greedy_avg_rsec_mbps"] for r in rows])),
@@ -75,6 +91,14 @@ def _parse_args():
     parser.add_argument("--episodes", type=int, default=20, help="Episodes per seed")
     parser.add_argument("--seeds", type=str, default="7,21,42,84,168", help="Comma-separated seeds")
     parser.add_argument("--output-dir", type=str, default="outputs/dqn_eval", help="Output directory")
+    parser.add_argument(
+        "--channel-model",
+        type=str,
+        default="rician",
+        choices=["rician", "rayleigh"],
+        help="Fading model used by the trained environment",
+    )
+    parser.add_argument("--rician-k", type=float, default=5.0, help="Rician K-factor")
     return parser.parse_args()
 
 
@@ -86,10 +110,13 @@ if __name__ == "__main__":
         episodes_per_seed=args.episodes,
         seeds=seeds,
         output_dir=args.output_dir,
+        channel_model=args.channel_model,
+        rician_k=args.rician_k,
     )
 
     agg = result["aggregate"]
     print("Evaluation complete:")
+    print(f"  Channel model          : {agg['fading_model']}")
     print(f"  DQN avg secrecy rate    : {agg['dqn_avg_rsec_mbps']:.4f} Mbps")
     print(f"  Random avg secrecy rate : {agg['random_avg_rsec_mbps']:.4f} Mbps")
     print(f"  Greedy avg secrecy rate : {agg['greedy_avg_rsec_mbps']:.4f} Mbps")
