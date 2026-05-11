@@ -1,0 +1,2 @@
+episode,noise_std,episode_reward_bps_step,avg_R_sec_mbps,episode_secrecy_mbits,rolling100_avg_R_sec_mbps
+1,0.249204,297837854.402295,1.489189272011475,29.7837854402295,1.489189272011475
