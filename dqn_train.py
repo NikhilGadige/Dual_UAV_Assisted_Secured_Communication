@@ -31,10 +31,17 @@ class DQNConfig:
     device: str = "cpu"
     fading_model: str = "rician"
     rician_k: float = 5.0
+    evaluation_episodes: int = 20
+    control_mode: str = "velocity"
 
 
 def make_env_config(seed: int, cfg: DQNConfig) -> EnvConfig:
-    return EnvConfig(seed=seed, fading_model=cfg.fading_model, rician_k=cfg.rician_k)
+    return EnvConfig(
+        seed=seed,
+        fading_model=cfg.fading_model,
+        rician_k=cfg.rician_k,
+        control_mode=cfg.control_mode,
+    )
 
 
 class QNetwork(nn.Module):
@@ -187,10 +194,19 @@ def train_dqn(
         done = False
         ep_reward = 0.0
         ep_rsec_bps = 0.0
+        ep_rlegit_bps = 0.0
+        ep_reve_bps = 0.0
         ep_energy_j = 0.0
+        ep_jammer_power = 0.0
         ep_steps = 0
+        relay_start = env.relay_position.copy()
+        jammer_start = env.jammer_position.copy()
+        relay_path_m = 0.0
+        jammer_path_m = 0.0
 
         while not done:
+            prev_relay_position = env.relay_position.copy()
+            prev_jammer_position = env.jammer_position.copy()
             eps = epsilon_by_step(global_step, cfg)
             if random.random() < eps:
                 action_id = random.randrange(action_dim)
@@ -206,8 +222,13 @@ def train_dqn(
             replay.add(state, action_id, float(reward), next_state, float(done))
             state = next_state
             ep_reward += reward
+            ep_rlegit_bps += info["R_legit"]
+            ep_reve_bps += info["R_eve"]
             ep_rsec_bps += info["R_sec"]
             ep_energy_j += info["total_energy_j"]
+            ep_jammer_power += info["jammer_power"]
+            relay_path_m += float(np.linalg.norm(env.relay_position - prev_relay_position))
+            jammer_path_m += float(np.linalg.norm(env.jammer_position - prev_jammer_position))
             ep_steps += 1
             global_step += 1
 
@@ -233,18 +254,40 @@ def train_dqn(
                     target_net.load_state_dict(q_net.state_dict())
 
         avg_rsec_mbps = (ep_rsec_bps / max(ep_steps, 1)) / 1e6
+        avg_reward_mbps = (ep_reward / max(ep_steps, 1)) / 1e6
         ep_secrecy_mbits = (ep_rsec_bps * env.config.dt) / 1e6
         rolling_rewards.append(avg_rsec_mbps)
+        roll20 = float(np.mean(rolling_rewards[-20:]))
         roll100 = float(np.mean(rolling_rewards[-100:]))
+        convergence_gap_mbps = float(abs(roll20 - roll100))
+        distances = env.compute_distances()
         train_rows.append(
             {
                 "episode": ep,
+                "global_step": global_step,
+                "fading_model": cfg.fading_model,
+                "control_mode": cfg.control_mode,
                 "epsilon": eps,
                 "episode_reward_bps_step": float(ep_reward),
+                "avg_reward_mbps": float(avg_reward_mbps),
+                "avg_R_legit_mbps": float((ep_rlegit_bps / max(ep_steps, 1)) / 1e6),
+                "avg_R_eve_mbps": float((ep_reve_bps / max(ep_steps, 1)) / 1e6),
                 "avg_R_sec_mbps": float(avg_rsec_mbps),
                 "episode_secrecy_mbits": float(ep_secrecy_mbits),
                 "avg_energy_j": float(ep_energy_j / max(ep_steps, 1)),
+                "avg_jammer_power_w": float(ep_jammer_power / max(ep_steps, 1)),
+                "steps": ep_steps,
+                "relay_path_m": relay_path_m,
+                "jammer_path_m": jammer_path_m,
+                "relay_displacement_m": float(np.linalg.norm(env.relay_position - relay_start)),
+                "jammer_displacement_m": float(np.linalg.norm(env.jammer_position - jammer_start)),
+                "final_d_UR_m": float(distances["d_UR"]),
+                "final_d_RB_m": float(distances["d_RB"]),
+                "final_d_UE_m": float(distances["d_UE"]),
+                "final_d_JE_m": float(distances["d_JE"]),
+                "rolling20_avg_R_sec_mbps": roll20,
                 "rolling100_avg_R_sec_mbps": roll100,
+                "convergence_gap20_100_mbps": convergence_gap_mbps,
             }
         )
 
@@ -263,18 +306,18 @@ def train_dqn(
     torch.save(q_net.state_dict(), model_path)
 
     eval_env = UAVEnvironment(make_env_config(cfg.seed + 999, cfg))
-    dqn_eval = evaluate_dqn(eval_env, q_net, action_table, device=device, episodes=20)
+    dqn_eval = evaluate_dqn(eval_env, q_net, action_table, device=device, episodes=cfg.evaluation_episodes)
     random_eval = evaluate_policy(
         "Random Walk",
         random_policy,
-        episodes=20,
+        episodes=cfg.evaluation_episodes,
         seed=cfg.seed + 999,
         env_config=make_env_config(cfg.seed + 999, cfg),
     )
     greedy_eval = evaluate_policy(
         "Distance-Greedy",
         distance_greedy_policy,
-        episodes=20,
+        episodes=cfg.evaluation_episodes,
         seed=cfg.seed + 999,
         env_config=make_env_config(cfg.seed + 999, cfg),
     )
@@ -289,7 +332,7 @@ def train_dqn(
         "model_path": str(model_path.resolve()),
     }
 
-    print("\nFinal comparison (evaluation episodes=20):")
+    print(f"\nFinal comparison (evaluation episodes={cfg.evaluation_episodes}):")
     print(f"  Channel model            : {summary['fading_model']}")
     print(f"  DQN avg secrecy rate      : {summary['dqn_mean_avg_rsec_mbps']:.4f} Mbps")
     print(f"  Random avg secrecy rate   : {summary['random_mean_avg_rsec_mbps']:.4f} Mbps")
@@ -314,6 +357,14 @@ def _parse_args():
     parser.add_argument("--rician-k", type=float, default=5.0, help="Rician K-factor")
     parser.add_argument("--output-dir", type=str, default="outputs/dqn", help="Output directory")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--eval-episodes", type=int, default=20, help="Evaluation episodes after training")
+    parser.add_argument(
+        "--control-mode",
+        type=str,
+        default="velocity",
+        choices=["velocity", "waypoint"],
+        help="Velocity-vector or normalized waypoint control",
+    )
     return parser.parse_args()
 
 
@@ -325,6 +376,8 @@ if __name__ == "__main__":
             seed=args.seed,
             fading_model=args.channel_model,
             rician_k=args.rician_k,
+            evaluation_episodes=args.eval_episodes,
+            control_mode=args.control_mode,
         ),
         output_dir=args.output_dir,
     )
