@@ -2,6 +2,7 @@ import numpy as np
 from dataclasses import replace
 
 from environment import EnvConfig, UAVEnvironment
+from config_utils import build_env_config
 
 BPS_TO_MBPS = 1e-6
 BITS_TO_MBITS = 1e-6
@@ -23,7 +24,6 @@ def random_policy(env: UAVEnvironment) -> tuple[np.ndarray, np.ndarray, float]:
 
 
 def distance_greedy_policy(env: UAVEnvironment) -> tuple[np.ndarray, np.ndarray, float]:
-    # Relay targets midpoint between user and BS to balance two-hop quality.
     relay_target_xy = 0.5 * (env.user_position[:2] + env.bs_position[:2])
     jammer_target_xy = env.eve_position[:2]
 
@@ -68,7 +68,7 @@ def run_episode(env: UAVEnvironment, policy_fn) -> dict:
         "avg_R_eve_bps": float(total_r_eve / max(steps, 1)),
         "avg_R_sec_bps": float(total_r_sec / max(steps, 1)),
         "avg_energy_j": float(total_energy_j / max(steps, 1)),
-        "avg_step_reward_mbps": float((total_reward / max(steps, 1)) * BPS_TO_MBPS),
+        "avg_shaped_reward": float(total_reward / max(steps, 1)),
         "avg_R_legit_mbps": float((total_r_legit / max(steps, 1)) * BPS_TO_MBPS),
         "avg_R_eve_mbps": float((total_r_eve / max(steps, 1)) * BPS_TO_MBPS),
         "avg_R_sec_mbps": float((total_r_sec / max(steps, 1)) * BPS_TO_MBPS),
@@ -83,7 +83,7 @@ def evaluate_policy(
     return_episode_metrics: bool = False,
     env_config: EnvConfig | None = None,
 ) -> dict:
-    config = replace(env_config or EnvConfig(), seed=seed)
+    config = replace(env_config or build_env_config(), seed=seed)
     env = UAVEnvironment(config)
     metrics = [run_episode(env, policy_fn) for _ in range(episodes)]
 
@@ -102,7 +102,7 @@ def evaluate_policy(
         "mean_avg_R_eve_bps": float(np.mean([m["avg_R_eve_bps"] for m in metrics])),
         "mean_avg_R_sec_bps": float(np.mean([m["avg_R_sec_bps"] for m in metrics])),
         "mean_avg_energy_j": float(np.mean([m["avg_energy_j"] for m in metrics])),
-        "mean_avg_step_reward_mbps": float(np.mean([m["avg_step_reward_mbps"] for m in metrics])),
+        "mean_avg_shaped_reward": float(np.mean([m["avg_shaped_reward"] for m in metrics])),
         "mean_avg_R_legit_mbps": float(np.mean([m["avg_R_legit_mbps"] for m in metrics])),
         "mean_avg_R_eve_mbps": float(np.mean([m["avg_R_eve_mbps"] for m in metrics])),
         "mean_avg_R_sec_mbps": float(np.mean([m["avg_R_sec_mbps"] for m in metrics])),
@@ -128,7 +128,7 @@ def print_summary(summary: dict) -> None:
         f"{summary['mean_episode_secrecy_mbits']:.4f} Mbits"
     )
     print(f"  Mean episode energy              : {summary['mean_episode_energy_j']:.4f} J")
-    print(f"  Mean avg step reward             : {summary['mean_avg_step_reward_mbps']:.4f} Mbps")
+    print(f"  Mean avg shaped reward            : {summary['mean_avg_shaped_reward']:.4f}")
     print(f"  Mean avg R_legit                 : {summary['mean_avg_R_legit_mbps']:.4f} Mbps")
     print(f"  Mean avg R_eve                   : {summary['mean_avg_R_eve_mbps']:.4f} Mbps")
     print(f"  Mean avg R_sec                   : {summary['mean_avg_R_sec_mbps']:.4f} Mbps")

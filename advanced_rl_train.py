@@ -10,7 +10,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from Summer_Internship_2026.environment import EnvConfig, UAVEnvironment
+from environment import EnvConfig, UAVEnvironment
+from config_utils import build_env_config
 
 
 def set_seed(seed: int) -> None:
@@ -44,15 +45,36 @@ class AdvancedRLConfig:
     sac_alpha: float = 0.2
     ppo_clip: float = 0.2
     ppo_epochs: int = 4
+    user_mobile: bool = False
+    use_los_model: bool = False
+    observation_mode: str = "full"
+    normalize_observations: bool = True
+    # NTN / Satellite
+    enable_ntn: bool = False
+    satellite_altitude_km: float = 500.0
+    satellite_horizontal_offset_km: float = 100.0
+    ntn_carrier_frequency_hz: float = 2e9
+    ntn_atmospheric_loss_db: float = 0.5
+    ntn_rician_k_db: float = 10.0
 
 
 def make_env_config(seed: int, cfg: AdvancedRLConfig) -> EnvConfig:
-    return EnvConfig(
+    return build_env_config(
         seed=seed,
         fading_model=cfg.fading_model,
         rician_k=cfg.rician_k,
         control_mode=cfg.control_mode,
         role_switching=cfg.role_switching,
+        user_mobile=cfg.user_mobile,
+        use_los_model=cfg.use_los_model,
+        observation_mode=cfg.observation_mode,
+        normalize_observations=cfg.normalize_observations,
+        enable_ntn=cfg.enable_ntn,
+        satellite_altitude_km=cfg.satellite_altitude_km,
+        satellite_horizontal_offset_km=cfg.satellite_horizontal_offset_km,
+        ntn_carrier_frequency_hz=cfg.ntn_carrier_frequency_hz,
+        ntn_atmospheric_loss_db=cfg.ntn_atmospheric_loss_db,
+        ntn_rician_k_db=cfg.ntn_rician_k_db,
     )
 
 
@@ -443,8 +465,16 @@ def _row(
         "fading_model": cfg.fading_model,
         "control_mode": cfg.control_mode,
         "role_switching": cfg.role_switching,
+        "user_mobile": cfg.user_mobile,
+        "use_los_model": cfg.use_los_model,
+        "observation_mode": cfg.observation_mode,
+        "normalize_observations": cfg.normalize_observations,
+        "enable_energy_harvesting": False,
+        "observation_has_eh": cfg.observation_mode == "full_eh",
+        "enable_ntn": cfg.enable_ntn,
+        "satellite_altitude_km": cfg.satellite_altitude_km,
         "episode_reward_bps_step": float(ep_reward),
-        "avg_reward_mbps": float((ep_reward / max(steps, 1)) / 1e6),
+        "avg_shaped_reward": float(ep_reward / max(steps, 1)),
         "avg_R_sec_mbps": float((ep_rsec / max(steps, 1)) / 1e6),
         "episode_secrecy_mbits": float((ep_rsec * 0.1) / 1e6),
         "steps": steps,
@@ -502,6 +532,12 @@ def _parse_args():
     parser.add_argument("--channel-model", type=str, default="rician", choices=["rician", "rayleigh"])
     parser.add_argument("--control-mode", type=str, default="velocity", choices=["velocity", "waypoint"])
     parser.add_argument("--role-switching", action="store_true")
+    parser.add_argument("--enable-ntn", action="store_true", help="Enable NTN satellite-assisted communication")
+    parser.add_argument("--satellite-altitude-km", type=float, default=500.0, help="Satellite altitude (km)")
+    parser.add_argument("--satellite-horizontal-offset-km", type=float, default=100.0, help="Satellite horizontal offset (km)")
+    parser.add_argument("--ntn-carrier-frequency-hz", type=float, default=2e9, help="NTN carrier frequency (Hz)")
+    parser.add_argument("--ntn-atmospheric-loss-db", type=float, default=0.5, help="NTN atmospheric loss (dB)")
+    parser.add_argument("--ntn-rician-k-db", type=float, default=10.0, help="NTN Rician K-factor (dB)")
     parser.add_argument("--output-dir", type=str, default="outputs/advanced_rl")
     return parser.parse_args()
 
@@ -517,6 +553,12 @@ if __name__ == "__main__":
             fading_model=args.channel_model,
             control_mode=args.control_mode,
             role_switching=args.role_switching,
+            enable_ntn=args.enable_ntn,
+            satellite_altitude_km=args.satellite_altitude_km,
+            satellite_horizontal_offset_km=args.satellite_horizontal_offset_km,
+            ntn_carrier_frequency_hz=args.ntn_carrier_frequency_hz,
+            ntn_atmospheric_loss_db=args.ntn_atmospheric_loss_db,
+            ntn_rician_k_db=args.ntn_rician_k_db,
         ),
         args.output_dir,
     )

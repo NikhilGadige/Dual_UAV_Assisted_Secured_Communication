@@ -27,10 +27,6 @@ def _float(row: dict, key: str, default: float = 0.0) -> float:
 
 
 def plot_training_comparison(log_specs: list[dict], output_dir: str) -> dict:
-    """Plot cross-agent/channel learning curves from training CSV logs.
-
-    Each spec must include: algorithm, fading_model, csv_path.
-    """
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     plt = _safe_import_matplotlib()
@@ -53,11 +49,11 @@ def plot_training_comparison(log_specs: list[dict], output_dir: str) -> dict:
     ax1 = fig1.add_subplot(111)
     for label, rows in series:
         episodes = [int(r["episode"]) for r in rows]
-        rewards = [_float(r, "avg_reward_mbps") for r in rows]
+        rewards = [_float(r, "avg_shaped_reward") for r in rows]
         ax1.plot(episodes, rewards, label=label)
     ax1.set_xlabel("Episode")
-    ax1.set_ylabel("Avg Reward (Mbps-equivalent)")
-    ax1.set_title("Secrecy Reward Over Episodes")
+    ax1.set_ylabel("Shaped Reward")
+    ax1.set_title("Shaped Reward Over Episodes")
     ax1.grid(alpha=0.25)
     ax1.legend()
     fig1.tight_layout()

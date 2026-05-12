@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from environment import EnvConfig, UAVEnvironment
+from config_utils import build_env_config
 from baselines import distance_greedy_policy, evaluate_policy, random_policy
 
 
@@ -33,14 +34,35 @@ class DQNConfig:
     rician_k: float = 5.0
     evaluation_episodes: int = 20
     control_mode: str = "velocity"
+    user_mobile: bool = False
+    use_los_model: bool = False
+    observation_mode: str = "full"
+    normalize_observations: bool = True
+    # NTN / Satellite
+    enable_ntn: bool = False
+    satellite_altitude_km: float = 500.0
+    satellite_horizontal_offset_km: float = 100.0
+    ntn_carrier_frequency_hz: float = 2e9
+    ntn_atmospheric_loss_db: float = 0.5
+    ntn_rician_k_db: float = 10.0
 
 
 def make_env_config(seed: int, cfg: DQNConfig) -> EnvConfig:
-    return EnvConfig(
+    return build_env_config(
         seed=seed,
         fading_model=cfg.fading_model,
         rician_k=cfg.rician_k,
         control_mode=cfg.control_mode,
+        user_mobile=cfg.user_mobile,
+        use_los_model=cfg.use_los_model,
+        observation_mode=cfg.observation_mode,
+        normalize_observations=cfg.normalize_observations,
+        enable_ntn=cfg.enable_ntn,
+        satellite_altitude_km=cfg.satellite_altitude_km,
+        satellite_horizontal_offset_km=cfg.satellite_horizontal_offset_km,
+        ntn_carrier_frequency_hz=cfg.ntn_carrier_frequency_hz,
+        ntn_atmospheric_loss_db=cfg.ntn_atmospheric_loss_db,
+        ntn_rician_k_db=cfg.ntn_rician_k_db,
     )
 
 
@@ -254,7 +276,8 @@ def train_dqn(
                     target_net.load_state_dict(q_net.state_dict())
 
         avg_rsec_mbps = (ep_rsec_bps / max(ep_steps, 1)) / 1e6
-        avg_reward_mbps = (ep_reward / max(ep_steps, 1)) / 1e6
+        # avg_shaped_reward = (ep_reward / max(ep_steps, 1)) / 1e6
+        avg_shaped_reward = ep_reward / max(ep_steps, 1)
         ep_secrecy_mbits = (ep_rsec_bps * env.config.dt) / 1e6
         rolling_rewards.append(avg_rsec_mbps)
         roll20 = float(np.mean(rolling_rewards[-20:]))
@@ -267,9 +290,17 @@ def train_dqn(
                 "global_step": global_step,
                 "fading_model": cfg.fading_model,
                 "control_mode": cfg.control_mode,
+                "user_mobile": cfg.user_mobile,
+                "use_los_model": cfg.use_los_model,
+                "observation_mode": cfg.observation_mode,
+                "normalize_observations": cfg.normalize_observations,
+                "enable_energy_harvesting": env.config.enable_energy_harvesting,
+                "observation_has_eh": cfg.observation_mode == "full_eh",
+                "enable_ntn": env.config.enable_ntn,
+                "satellite_altitude_km": env.config.satellite_altitude_km,
                 "epsilon": eps,
                 "episode_reward_bps_step": float(ep_reward),
-                "avg_reward_mbps": float(avg_reward_mbps),
+                "avg_shaped_reward": float(avg_shaped_reward),
                 "avg_R_legit_mbps": float((ep_rlegit_bps / max(ep_steps, 1)) / 1e6),
                 "avg_R_eve_mbps": float((ep_reve_bps / max(ep_steps, 1)) / 1e6),
                 "avg_R_sec_mbps": float(avg_rsec_mbps),
@@ -365,6 +396,12 @@ def _parse_args():
         choices=["velocity", "waypoint"],
         help="Velocity-vector or normalized waypoint control",
     )
+    parser.add_argument("--enable-ntn", action="store_true", help="Enable NTN satellite-assisted communication")
+    parser.add_argument("--satellite-altitude-km", type=float, default=500.0, help="Satellite altitude (km)")
+    parser.add_argument("--satellite-horizontal-offset-km", type=float, default=100.0, help="Satellite horizontal offset (km)")
+    parser.add_argument("--ntn-carrier-frequency-hz", type=float, default=2e9, help="NTN carrier frequency (Hz)")
+    parser.add_argument("--ntn-atmospheric-loss-db", type=float, default=0.5, help="NTN atmospheric loss (dB)")
+    parser.add_argument("--ntn-rician-k-db", type=float, default=10.0, help="NTN Rician K-factor (dB)")
     return parser.parse_args()
 
 
@@ -378,6 +415,12 @@ if __name__ == "__main__":
             rician_k=args.rician_k,
             evaluation_episodes=args.eval_episodes,
             control_mode=args.control_mode,
+            enable_ntn=args.enable_ntn,
+            satellite_altitude_km=args.satellite_altitude_km,
+            satellite_horizontal_offset_km=args.satellite_horizontal_offset_km,
+            ntn_carrier_frequency_hz=args.ntn_carrier_frequency_hz,
+            ntn_atmospheric_loss_db=args.ntn_atmospheric_loss_db,
+            ntn_rician_k_db=args.ntn_rician_k_db,
         ),
         output_dir=args.output_dir,
     )

@@ -33,7 +33,7 @@ def load_training_log(csv_path: str) -> list[dict]:
                     "rolling100_avg_R_sec_mbps": float(r["rolling100_avg_R_sec_mbps"]),
                     "convergence_gap20_100_mbps": float(r.get("convergence_gap20_100_mbps", 0.0)),
                     "episode_secrecy_mbits": float(r["episode_secrecy_mbits"]),
-                    "avg_reward_mbps": float(r.get("avg_reward_mbps", 0.0)),
+                    "avg_shaped_reward": float(r.get("avg_shaped_reward", 0.0)),
                     "relay_path_m": float(r.get("relay_path_m", 0.0)),
                     "jammer_path_m": float(r.get("jammer_path_m", 0.0)),
                 }
@@ -59,7 +59,7 @@ def plot_ddpg_training_curves(csv_path: str, output_dir: str | None = None) -> d
     roll100 = [r["rolling100_avg_R_sec_mbps"] for r in rows]
     noise = [r["noise_std"] for r in rows]
     ep_mbits = [r["episode_secrecy_mbits"] for r in rows]
-    rewards = [r["avg_reward_mbps"] for r in rows]
+    rewards = [r["avg_shaped_reward"] for r in rows]
     convergence_gap = [r["convergence_gap20_100_mbps"] for r in rows]
     relay_path = [r["relay_path_m"] for r in rows]
     jammer_path = [r["jammer_path_m"] for r in rows]
@@ -103,13 +103,13 @@ def plot_ddpg_training_curves(csv_path: str, output_dir: str | None = None) -> d
     fig3.savefig(mbits_path, dpi=150)
     plt.close(fig3)
 
-    reward_path = out_dir / "ddpg_curve_reward_mbps.png"
+    reward_path = out_dir / "ddpg_curve_shaped_reward.png"
     fig4 = plt.figure(figsize=(8, 4.5))
     ax4 = fig4.add_subplot(111)
     ax4.plot(episodes, rewards, alpha=0.7)
     ax4.set_xlabel("Episode")
-    ax4.set_ylabel("Avg Reward (Mbps-equivalent)")
-    ax4.set_title("DDPG Secrecy Reward Over Episodes")
+    ax4.set_ylabel("Shaped Reward")
+    ax4.set_title("DDPG Shaped Reward Over Episodes")
     ax4.grid(alpha=0.25)
     fig4.tight_layout()
     fig4.savefig(reward_path, dpi=150)
@@ -145,7 +145,7 @@ def plot_ddpg_training_curves(csv_path: str, output_dir: str | None = None) -> d
         "curve_rsec_mbps": str(curve_path.resolve()),
         "curve_noise": str(noise_path.resolve()),
         "curve_episode_mbits": str(mbits_path.resolve()),
-        "curve_reward_mbps": str(reward_path.resolve()),
+        "curve_shaped_reward": str(reward_path.resolve()),
         "curve_convergence_gap": str(convergence_path.resolve()),
         "curve_episode_path_length": str(movement_path.resolve()),
         "final_rolling100_mbps": float(roll100[-1]),
@@ -178,7 +178,7 @@ if __name__ == "__main__":
         "curve_rsec_mbps",
         "curve_noise",
         "curve_episode_mbits",
-        "curve_reward_mbps",
+        "curve_shaped_reward",
         "curve_convergence_gap",
         "curve_episode_path_length",
     ]:

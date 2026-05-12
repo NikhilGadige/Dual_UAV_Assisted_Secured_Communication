@@ -2,6 +2,7 @@ import numpy as np
 from dataclasses import dataclass, replace
 from typing import Tuple
 from channel import channel_gain, channel_gain_los_aware, compute_elevation_angle, generate_fading
+from ntn_channel import satellite_channel_gain
 from energy import compute_energy_usage, compute_energy_harvesting, update_battery_state
 from reward import (
     compute_secrecy_reward,
@@ -51,15 +52,19 @@ class EnvConfig:
     jammer_rf_power_coeff: float = 1.0
     energy_reward_weight: float = 1e-1
     battery_depletion_penalty: float = 5e5
+    # --- User mobility ---
     user_mobile: bool = False
     user_max_speed: float = 3.0
     user_motion_model: str = "random_walk"
+    # --- Observation / state representation ---
     observation_mode: str = "full"
     normalize_observations: bool = True
+    # --- Reward shaping ---
     movement_penalty_weight: float = 5e-2
     smoothness_penalty_weight: float = 2e-2
     boundary_penalty_weight: float = 1.0
     secrecy_scale: float = 1e-6
+    # --- Energy harvesting ---
     enable_energy_harvesting: bool = False
     relay_harvest_efficiency: float = 0.5
     jammer_harvest_efficiency: float = 0.5
@@ -67,6 +72,13 @@ class EnvConfig:
     jammer_harvest_max_watts: float = 8.0
     solar_variability: float = 0.1
     harvesting_reward_weight: float = 1e-3
+    # --- NTN / Satellite ---
+    enable_ntn: bool = False
+    satellite_altitude_km: float = 500.0
+    satellite_horizontal_offset_km: float = 100.0
+    ntn_carrier_frequency_hz: float = 2e9
+    ntn_atmospheric_loss_db: float = 0.5
+    ntn_rician_k_db: float = 10.0
 
 class UAVEnvironment:
     def __init__(self, config: EnvConfig | None = None):
@@ -86,12 +98,19 @@ class UAVEnvironment:
         self.roles_swapped = False
         self.relay_battery = self.config.relay_battery_joules
         self.jammer_battery = self.config.jammer_battery_joules
+        # --- Energy-harvesting tracking ---
         self.relay_harvest_power_w = 0.0
         self.jammer_harvest_power_w = 0.0
         self.relay_harvested_energy_j = 0.0
         self.jammer_harvested_energy_j = 0.0
         self.total_harvested_energy_j = 0.0
         self.battery_saturation_event = False
+        # --- NTN / Satellite ---
+        alt_m = self.config.satellite_altitude_km * 1000.0
+        off_m = self.config.satellite_horizontal_offset_km * 1000.0
+        self.satellite_position = np.array([off_m, off_m, alt_m], dtype=float)
+        self.ntn_fading_sat_relay = 1.0
+        self.h_sat_relay = 0.0
 
     def _random_position_2d(self) -> np.ndarray:
         return np.array([
@@ -117,6 +136,7 @@ class UAVEnvironment:
         self.roles_swapped = False
         self.relay_battery = self.config.relay_battery_joules
         self.jammer_battery = self.config.jammer_battery_joules
+        # --- Energy-harvesting tracking ---
         self.relay_harvest_power_w = 0.0
         self.jammer_harvest_power_w = 0.0
         self.relay_harvested_energy_j = 0.0
@@ -156,6 +176,7 @@ class UAVEnvironment:
             speed = np.clip(speed * speed_jitter, 0.0, self.config.user_max_speed)
             self.user_velocity = speed * np.array([np.cos(new_angle), np.sin(new_angle)])
 
+        # --- Position update ---
         new_xy = self.user_position[:2] + self.user_velocity * self.config.dt
 
         # --- Boundary reflection (elastic bounce) ---
@@ -266,6 +287,7 @@ class UAVEnvironment:
 
         relay_velocity_action = self._control_to_velocity_action(self.relay_position, action_relay)
         jammer_velocity_action = self._control_to_velocity_action(self.jammer_position, action_jammer)
+        # Save pre-update velocities for smoothness penalty
         self._prev_relay_velocity = self.relay_velocity.copy()
         self._prev_jammer_velocity = self.jammer_velocity.copy()
         self.relay_velocity = self._update_velocity(self.relay_velocity, relay_velocity_action)
@@ -377,9 +399,11 @@ class UAVEnvironment:
     def get_state(self) -> np.ndarray:
         """Build the observation vector according to config.observation_mode."""
         mode = self.config.observation_mode
-        gains = self.compute_all_channel_gains() if mode in ("channels", "full") else {}
-        rates = self.compute_rates(gains) if mode in ("channels", "full") else {}
-        distances = self.compute_distances() if mode == "full" else {}
+        needs_comms = mode in ("channels", "full", "full_eh", "full_ntn")
+        gains = self.compute_all_channel_gains() if needs_comms else {}
+        rates = self.compute_rates(gains) if needs_comms else {}
+        needs_dist = mode in ("full", "full_eh", "full_ntn")
+        distances = self.compute_distances() if needs_dist else {}
 
         return build_observation(
             mode=mode,
@@ -404,6 +428,17 @@ class UAVEnvironment:
             area_size=self.config.area_size,
             relay_battery_capacity=self.config.relay_battery_joules,
             jammer_battery_capacity=self.config.jammer_battery_joules,
+            # EH observation params
+            enable_energy_harvesting=self.config.enable_energy_harvesting,
+            relay_harvest_power_w=self.relay_harvest_power_w,
+            jammer_harvest_power_w=self.jammer_harvest_power_w,
+            relay_harvest_max_watts=self.config.relay_harvest_max_watts,
+            jammer_harvest_max_watts=self.config.jammer_harvest_max_watts,
+            battery_saturation_event=self.battery_saturation_event,
+            # NTN observation params
+            satellite_position=self.satellite_position,
+            h_sat_relay=self.h_sat_relay,
+            satellite_altitude_m=self.config.satellite_altitude_km * 1000.0,
         )
 
     def compute_channel_gain(self, tx_pos: np.ndarray, rx_pos: np.ndarray,
@@ -430,6 +465,17 @@ class UAVEnvironment:
             self.user_position, self.eve_position, self.fading["UE"])
         gains["h_JE"] = self.compute_channel_gain(
             jammer_position, self.eve_position, self.fading["JE"])
+        if self.config.enable_ntn:
+            self.ntn_fading_sat_relay = generate_fading(
+                "rician", K=10.0 ** (self.config.ntn_rician_k_db / 10.0))
+            d_sr = compute_distance(self.satellite_position, relay_position)
+            self.h_sat_relay = satellite_channel_gain(
+                d_sr,
+                freq_hz=self.config.ntn_carrier_frequency_hz,
+                atmospheric_loss_db=self.config.ntn_atmospheric_loss_db,
+                rician_k_db=self.config.ntn_rician_k_db,
+            )
+            gains["h_sat_relay"] = self.h_sat_relay
         return gains
 
     def compute_distances(self) -> dict:
@@ -456,6 +502,8 @@ class UAVEnvironment:
         print(f"  h_RB (Relay->BS)  : {gains['h_RB']:.6e}")
         print(f"  h_UE (User->Eve)  : {gains['h_UE']:.6e}")
         print(f"  h_JE (Jammer->Eve): {gains['h_JE']:.6e}")
+        if "h_sat_relay" in gains:
+            print(f"  h_SR (Sat->Relay): {gains['h_sat_relay']:.6e}  (NTN)")
 
     def compute_rates(self, gains: dict | None = None) -> dict:
         if gains is None:
@@ -465,6 +513,13 @@ class UAVEnvironment:
         gamma_ur = (self.config.user_power * gains["h_UR"]) / noise_power
         gamma_rb = (self.config.relay_power * gains["h_RB"]) / noise_power
         r_legit = 0.5 * self.config.bandwidth * np.log2(1.0 + min(gamma_ur, gamma_rb))
+
+        # NTN-assisted legitimate rate
+        if self.config.enable_ntn and "h_sat_relay" in gains:
+            gamma_sat_relay = (self.config.relay_power * gains["h_sat_relay"]) / noise_power
+            gamma_rb_ntn = gamma_rb + gamma_sat_relay
+            r_legit_ntn = 0.5 * self.config.bandwidth * np.log2(1.0 + min(gamma_ur, gamma_rb_ntn))
+            r_legit = max(r_legit, r_legit_ntn)
 
         gamma_e = (self.config.user_power * gains["h_UE"]) / (
             noise_power + self.current_jammer_power * gains["h_JE"]
@@ -492,7 +547,7 @@ if __name__ == "__main__":
     print("OBSERVATION MODE VERIFICATION")
     print("=" * 70)
     base_cfg = EnvConfig(seed=42, user_mobile=True)
-    for mode in ["geometry", "channels", "full"]:
+    for mode in ["geometry", "channels", "full", "full_eh", "full_ntn"]:
         cfg = replace(base_cfg, observation_mode=mode, normalize_observations=True)
         env = UAVEnvironment(cfg)
         s_norm = env.reset()
@@ -748,9 +803,34 @@ if __name__ == "__main__":
     print()
 
     print("=" * 70)
+    print("NTN SATELLITE VERIFICATION")
+    print("=" * 70)
+    cfg_ntn = EnvConfig(seed=42, observation_mode="full_ntn", enable_ntn=True,
+                        satellite_altitude_km=500.0, satellite_horizontal_offset_km=100.0)
+    env_ntn = UAVEnvironment(cfg_ntn)
+    s_ntn = env_ntn.reset()
+    print(f"  full_ntn obs dim    : {s_ntn.shape[0]} (expect 46)")
+    print(f"  Satellite position  : {env_ntn.satellite_position}")
+    print(f"  h_sat_relay (linear): {env_ntn.h_sat_relay:.6e}")
+    sat_alt = env_ntn.config.satellite_altitude_km
+    print(f"  Satellite altitude  : {sat_alt:.0f} km")
+    # Step with NTN enabled
+    a_relay, a_jammer = np.zeros(2), np.zeros(2)
+    ns, r, d, info = env_ntn.step(a_relay, a_jammer)
+    print(f"  Step R_legit        : {info['R_legit']:.4f} bps")
+    print(f"  Step R_sec          : {info['R_sec']:.4f} bps")
+    # Compare with NTN disabled
+    cfg_no_ntn = EnvConfig(seed=42, observation_mode="full", enable_ntn=False)
+    env_no_ntn = UAVEnvironment(cfg_no_ntn)
+    env_no_ntn.reset()
+    ns2, r2, d2, info2 = env_no_ntn.step(a_relay, a_jammer)
+    print(f"  (No NTN: R_legit={info2['R_legit']:.4f}, R_sec={info2['R_sec']:.4f})")
+    print()
+
+    print("=" * 70)
     print("STATE DIMENSION VERIFICATION  (Requirement 13)")
     print("=" * 70)
-    for mode in ["geometry", "channels", "full"]:
+    for mode in ["geometry", "channels", "full", "full_eh", "full_ntn"]:
         cfg_noeh = EnvConfig(seed=42, observation_mode=mode, enable_energy_harvesting=False)
         cfg_eh_on = EnvConfig(seed=42, observation_mode=mode, enable_energy_harvesting=True)
         env_noeh = UAVEnvironment(cfg_noeh)

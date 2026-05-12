@@ -2,15 +2,16 @@ import argparse
 import csv
 from pathlib import Path
 
-from Summer_Internship_2026.advanced_rl_train import AdvancedRLConfig, train_advanced
+from advanced_rl_train import AdvancedRLConfig, train_advanced
 from baselines import distance_greedy_policy, evaluate_policy, random_policy
+from config_utils import build_env_config
 from ddpg_analysis import plot_ddpg_training_curves
 from dqn_analysis import plot_dqn_training_curves
-from Summer_Internship_2026.environment import EnvConfig
-from Summer_Internship_2026.final_comparison import run_final_comparison
+from environment import EnvConfig
+from final_comparison import run_final_comparison
 from paper_plots import plot_final_paper_comparisons, plot_training_comparison
-from Summer_Internship_2026.rl_channel_experiments import run_rl_channel_matrix
-from Summer_Internship_2026.trajectory_plots import generate_trajectory_suite
+from rl_channel_experiments import run_rl_channel_matrix
+from trajectory_plots import generate_trajectory_suite
 
 
 def _parse_seed_list(raw: str) -> list[int]:
@@ -21,6 +22,10 @@ def _write_baseline_channel_table(
     output_dir: Path,
     episodes_per_seed: int,
     seeds: list[int],
+    user_mobile: bool,
+    use_los_model: bool,
+    observation_mode: str,
+    normalize_observations: bool,
 ) -> str:
     rows = []
     policies = [
@@ -35,7 +40,7 @@ def _write_baseline_channel_table(
                     policy_fn,
                     episodes=episodes_per_seed,
                     seed=seed,
-                    env_config=EnvConfig(seed=seed, fading_model=fading_model),
+                    env_config=build_env_config(seed=seed, fading_model=fading_model, user_mobile=user_mobile, use_los_model=use_los_model, observation_mode=observation_mode, normalize_observations=normalize_observations),
                 )
                 rows.append(
                     {
@@ -43,6 +48,8 @@ def _write_baseline_channel_table(
                         "fading_model": fading_model,
                         "seed": seed,
                         "episodes": episodes_per_seed,
+                        "enable_energy_harvesting": False,
+                        "observation_has_eh": observation_mode == "full_eh",
                         "mean_avg_R_sec_mbps": summary["mean_avg_R_sec_mbps"],
                         "mean_episode_secrecy_mbits": summary["mean_episode_secrecy_mbits"],
                         "mean_avg_R_legit_mbps": summary["mean_avg_R_legit_mbps"],
@@ -75,6 +82,10 @@ def run_paper_reproduction(
     control_mode: str = "velocity",
     include_advanced: bool = False,
     advanced_methods: list[str] | None = None,
+    user_mobile: bool = False,
+    use_los_model: bool = False,
+    observation_mode: str = "full",
+    normalize_observations: bool = True,
 ) -> dict:
     if seeds is None:
         seeds = [7, 21, 42]
@@ -83,7 +94,15 @@ def run_paper_reproduction(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("\n[1/6] Running baselines for Rician and Rayleigh...")
-    baseline_csv = _write_baseline_channel_table(out_dir, eval_episodes, seeds)
+    baseline_csv = _write_baseline_channel_table(
+        out_dir,
+        eval_episodes,
+        seeds,
+        user_mobile,
+        use_los_model,
+        observation_mode,
+        normalize_observations,
+    )
 
     print("\n[2/6] Training DQN/DDPG channel matrix...")
     matrix = run_rl_channel_matrix(
@@ -92,6 +111,10 @@ def run_paper_reproduction(
         seed=train_seed,
         output_dir=str(out_dir / "rl_channel_matrix"),
         control_mode=control_mode,
+        user_mobile=user_mobile,
+        use_los_model=use_los_model,
+        observation_mode=observation_mode,
+        normalize_observations=normalize_observations,
     )
     paths = _model_paths(matrix["rows"])
 
@@ -131,6 +154,10 @@ def run_paper_reproduction(
         seeds=seeds,
         output_dir=str(out_dir / "final_comparison"),
         control_mode=control_mode,
+        user_mobile=user_mobile,
+        use_los_model=use_los_model,
+        observation_mode=observation_mode,
+        normalize_observations=normalize_observations,
     )
 
     print("\n[5/6] Creating paper-style aggregate plots...")
@@ -154,6 +181,10 @@ def run_paper_reproduction(
                         seed=train_seed,
                         fading_model=fading_model,
                         control_mode=control_mode,
+                        user_mobile=user_mobile,
+                        use_los_model=use_los_model,
+                        observation_mode=observation_mode,
+                        normalize_observations=normalize_observations,
                     ),
                     str(out_dir / "advanced_rl" / f"{method}_{fading_model}"),
                 )
@@ -162,6 +193,10 @@ def run_paper_reproduction(
                     {
                         "algorithm": method,
                         "fading_model": fading_model,
+                        "user_mobile": user_mobile,
+                        "use_los_model": use_los_model,
+                        "observation_mode": observation_mode,
+                        "normalize_observations": normalize_observations,
                         "mean_avg_rsec_mbps": result["mean_avg_rsec_mbps"],
                         "mean_episode_secrecy_mbits": result["mean_episode_secrecy_mbits"],
                         "training_log_csv": result["training_log_csv"],
@@ -243,6 +278,16 @@ def _parse_args():
     )
     parser.add_argument("--include-advanced", action="store_true", help="Also run TD3, SAC, and PPO")
     parser.add_argument("--advanced-methods", type=str, default="td3,sac,ppo", help="Comma-separated advanced methods")
+    parser.add_argument("--user-mobile", action="store_true", help="Enable mobile user")
+    parser.add_argument("--use-los-model", action="store_true", help="Use LoS path-loss model")
+    parser.add_argument(
+        "--observation-mode",
+        type=str,
+        default="full",
+        choices=["full", "geometry", "channels"],
+        help="Observation space mode",
+    )
+    parser.add_argument("--no-normalize", action="store_true", help="Disable observation normalization")
     return parser.parse_args()
 
 
@@ -258,4 +303,8 @@ if __name__ == "__main__":
         control_mode=args.control_mode,
         include_advanced=args.include_advanced,
         advanced_methods=[m.strip() for m in args.advanced_methods.split(",") if m.strip()],
+        user_mobile=args.user_mobile,
+        use_los_model=args.use_los_model,
+        observation_mode=args.observation_mode,
+        normalize_observations=not args.no_normalize,
     )

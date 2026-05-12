@@ -2,7 +2,7 @@ import argparse
 import csv
 from pathlib import Path
 
-from Summer_Internship_2026.ddpg_train import DDPGConfig, train_ddpg
+from ddpg_train import DDPGConfig, train_ddpg
 from dqn_train import DQNConfig, train_dqn
 
 
@@ -12,6 +12,10 @@ def run_rl_channel_matrix(
     seed: int = 42,
     output_dir: str = "outputs/rl_channel_matrix",
     control_mode: str = "velocity",
+    user_mobile: bool = False,
+    use_los_model: bool = False,
+    observation_mode: str = "full",
+    normalize_observations: bool = True,
 ) -> dict:
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -40,6 +44,10 @@ def run_rl_channel_matrix(
                     fading_model=fading_model,
                     evaluation_episodes=eval_episodes,
                     control_mode=control_mode,
+                    user_mobile=user_mobile,
+                    use_los_model=use_los_model,
+                    observation_mode=observation_mode,
+                    normalize_observations=normalize_observations,
                 ),
                 output_dir=str(run_dir),
             )
@@ -47,6 +55,12 @@ def run_rl_channel_matrix(
                 {
                     "algorithm": algorithm,
                     "fading_model": fading_model,
+                    "user_mobile": user_mobile,
+                    "use_los_model": use_los_model,
+                    "observation_mode": observation_mode,
+                    "normalize_observations": normalize_observations,
+                    "enable_energy_harvesting": False,
+                    "observation_has_eh": observation_mode == "full_eh",
                     "mean_avg_rsec_mbps": summary["dqn_mean_avg_rsec_mbps"],
                     "mean_episode_secrecy_mbits": summary["dqn_mean_episode_secrecy_mbits"],
                     "baseline_random_avg_rsec_mbps": summary["random_mean_avg_rsec_mbps"],
@@ -65,6 +79,10 @@ def run_rl_channel_matrix(
                     fading_model=fading_model,
                     evaluation_episodes=eval_episodes,
                     control_mode=control_mode,
+                    user_mobile=user_mobile,
+                    use_los_model=use_los_model,
+                    observation_mode=observation_mode,
+                    normalize_observations=normalize_observations,
                 ),
                 output_dir=str(run_dir),
             )
@@ -72,6 +90,12 @@ def run_rl_channel_matrix(
                 {
                     "algorithm": algorithm,
                     "fading_model": fading_model,
+                    "user_mobile": user_mobile,
+                    "use_los_model": use_los_model,
+                    "observation_mode": observation_mode,
+                    "normalize_observations": normalize_observations,
+                    "enable_energy_harvesting": False,
+                    "observation_has_eh": observation_mode == "full_eh",
                     "mean_avg_rsec_mbps": summary["ddpg_mean_avg_rsec_mbps"],
                     "mean_episode_secrecy_mbits": summary["ddpg_mean_episode_secrecy_mbits"],
                     "baseline_random_avg_rsec_mbps": summary["random_mean_avg_rsec_mbps"],
@@ -118,6 +142,16 @@ def _parse_args():
         default="outputs/rl_channel_matrix",
         help="Directory to store all run outputs",
     )
+    parser.add_argument("--user-mobile", action="store_true", help="Enable mobile user")
+    parser.add_argument("--use-los-model", action="store_true", help="Use LoS path-loss model")
+    parser.add_argument(
+        "--observation-mode",
+        type=str,
+        default="full",
+        choices=["full", "geometry", "channels"],
+        help="Observation space mode",
+    )
+    parser.add_argument("--no-normalize", action="store_true", help="Disable observation normalization")
     return parser.parse_args()
 
 
@@ -129,4 +163,8 @@ if __name__ == "__main__":
         seed=args.seed,
         output_dir=args.output_dir,
         control_mode=args.control_mode,
+        user_mobile=args.user_mobile,
+        use_los_model=args.use_los_model,
+        observation_mode=args.observation_mode,
+        normalize_observations=not args.no_normalize,
     )

@@ -6,8 +6,9 @@ import numpy as np
 import torch
 
 from baselines import distance_greedy_policy, evaluate_policy, random_policy
-from Summer_Internship_2026.ddpg_train import Actor, evaluate_ddpg
-from Summer_Internship_2026.environment import EnvConfig, UAVEnvironment
+from config_utils import build_env_config
+from ddpg_train import Actor, evaluate_ddpg
+from environment import EnvConfig, UAVEnvironment
 
 
 def evaluate_ddpg_multi_seed(
@@ -19,16 +20,24 @@ def evaluate_ddpg_multi_seed(
     rician_k: float = 5.0,
     control_mode: str = "velocity",
     role_switching: bool = False,
+    user_mobile: bool = False,
+    use_los_model: bool = False,
+    observation_mode: str = "full",
+    normalize_observations: bool = True,
 ) -> dict:
     if seeds is None:
         seeds = [7, 21, 42, 84, 168]
 
-    env_cfg = EnvConfig(
+    env_cfg = build_env_config(
         seed=0,
         fading_model=channel_model,
         rician_k=rician_k,
         control_mode=control_mode,
         role_switching=role_switching,
+        user_mobile=user_mobile,
+        use_los_model=use_los_model,
+        observation_mode=observation_mode,
+        normalize_observations=normalize_observations,
     )
     state_dim = UAVEnvironment(env_cfg).reset().shape[0]
     checkpoint = torch.load(actor_path, map_location="cpu")
@@ -42,12 +51,16 @@ def evaluate_ddpg_multi_seed(
 
     rows = []
     for seed in seeds:
-        eval_cfg = EnvConfig(
+        eval_cfg = build_env_config(
             seed=seed,
             fading_model=channel_model,
             rician_k=rician_k,
             control_mode=control_mode,
             role_switching=role_switching,
+            user_mobile=user_mobile,
+            use_los_model=use_los_model,
+            observation_mode=observation_mode,
+            normalize_observations=normalize_observations,
         )
         env = UAVEnvironment(eval_cfg)
         ddpg = evaluate_ddpg(env, actor, device=device, episodes=episodes_per_seed)
@@ -70,6 +83,12 @@ def evaluate_ddpg_multi_seed(
             {
                 "seed": seed,
                 "fading_model": channel_model,
+                "user_mobile": user_mobile,
+                "use_los_model": use_los_model,
+                "observation_mode": observation_mode,
+                "normalize_observations": normalize_observations,
+                "enable_energy_harvesting": False,
+                "observation_has_eh": observation_mode == "full_eh",
                 "ddpg_avg_rsec_mbps": ddpg["mean_avg_rsec_mbps"],
                 "ddpg_episode_secrecy_mbits": ddpg["mean_episode_secrecy_mbits"],
                 "random_avg_rsec_mbps": rnd["mean_avg_R_sec_mbps"],
@@ -122,6 +141,16 @@ def _parse_args():
         help="Velocity-vector or normalized waypoint control",
     )
     parser.add_argument("--role-switching", action="store_true", help="Enable relay/jammer role switching")
+    parser.add_argument("--user-mobile", action="store_true", help="Enable mobile user")
+    parser.add_argument("--use-los-model", action="store_true", help="Use LoS path-loss model")
+    parser.add_argument(
+        "--observation-mode",
+        type=str,
+        default="full",
+        choices=["full", "geometry", "channels"],
+        help="Observation space mode",
+    )
+    parser.add_argument("--no-normalize", action="store_true", help="Disable observation normalization")
     return parser.parse_args()
 
 
@@ -137,6 +166,10 @@ if __name__ == "__main__":
         rician_k=args.rician_k,
         control_mode=args.control_mode,
         role_switching=args.role_switching,
+        user_mobile=args.user_mobile,
+        use_los_model=args.use_los_model,
+        observation_mode=args.observation_mode,
+        normalize_observations=not args.no_normalize,
     )
 
     agg = result["aggregate"]

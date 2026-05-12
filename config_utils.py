@@ -10,6 +10,12 @@ def build_env_config(
     use_los_model: bool = False,
     observation_mode: str = "full",
     normalize_observations: bool = True,
+    enable_ntn: bool = False,
+    satellite_altitude_km: float = 500.0,
+    satellite_horizontal_offset_km: float = 100.0,
+    ntn_carrier_frequency_hz: float = 2e9,
+    ntn_atmospheric_loss_db: float = 0.5,
+    ntn_rician_k_db: float = 10.0,
 ) -> EnvConfig:
     return EnvConfig(
         seed=seed,
@@ -21,4 +27,10 @@ def build_env_config(
         use_los_model=use_los_model,
         observation_mode=observation_mode,
         normalize_observations=normalize_observations,
+        enable_ntn=enable_ntn,
+        satellite_altitude_km=satellite_altitude_km,
+        satellite_horizontal_offset_km=satellite_horizontal_offset_km,
+        ntn_carrier_frequency_hz=ntn_carrier_frequency_hz,
+        ntn_atmospheric_loss_db=ntn_atmospheric_loss_db,
+        ntn_rician_k_db=ntn_rician_k_db,
     )

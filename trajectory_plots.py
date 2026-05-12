@@ -5,9 +5,10 @@ import numpy as np
 import torch
 
 from baselines import distance_greedy_policy, random_policy
-from Summer_Internship_2026.ddpg_train import Actor, split_action
+from config_utils import build_env_config
+from ddpg_train import Actor, split_action
 from dqn_train import QNetwork, make_action_table
-from Summer_Internship_2026.environment import EnvConfig, UAVEnvironment
+from environment import EnvConfig, UAVEnvironment
 
 
 def _safe_import_matplotlib():
@@ -30,7 +31,7 @@ def rollout_policy(env: UAVEnvironment, policy_name: str, model_path: str | None
     trace = {
         "relay": [env.relay_position.copy()],
         "jammer": [env.jammer_position.copy()],
-        "user": env.user_position.copy(),
+        "user": [env.user_position.copy()],
         "eve": env.eve_position.copy(),
         "bs": env.bs_position.copy(),
         "total_r_sec": 0.0,
@@ -80,9 +81,11 @@ def rollout_policy(env: UAVEnvironment, policy_name: str, model_path: str | None
         trace["relay"].append(env.relay_position.copy())
         trace["jammer"].append(env.jammer_position.copy())
         trace["total_r_sec"] += info["R_sec"]
+        trace["user"].append(env.user_position.copy())
 
     trace["relay"] = np.asarray(trace["relay"])
     trace["jammer"] = np.asarray(trace["jammer"])
+    trace["user"] = np.asarray(trace["user"])
     return trace
 
 
@@ -93,13 +96,14 @@ def plot_trajectory(trace: dict, policy_name: str, fading_model: str, output_pat
 
     relay = trace["relay"]
     jammer = trace["jammer"]
-    user = trace["user"]
+    user = trace["user"]  # shape (T, 3) if mobile, (1, 3) if static
     eve = trace["eve"]
     bs = trace["bs"]
 
     ax.plot(relay[:, 0], relay[:, 1], label="Relay UAV", color="#1f77b4", linewidth=2)
     ax.plot(jammer[:, 0], jammer[:, 1], label="Jammer UAV", color="#d62728", linewidth=2)
-    ax.scatter(user[0], user[1], label="User", color="#2ca02c", s=80, marker="o")
+    ax.plot(user[:, 0], user[:, 1], label="User path", color="#2ca02c", linewidth=1.5, alpha=0.7)
+    ax.scatter(user[0, 0], user[0, 1], color="#2ca02c", s=60, marker="o", zorder=5)
     ax.scatter(eve[0], eve[1], label="Eavesdropper", color="#ff7f0e", s=80, marker="X")
     ax.scatter(bs[0], bs[1], label="Base Station", color="#111111", s=90, marker="s")
     ax.scatter(relay[0, 0], relay[0, 1], color="#1f77b4", s=40, marker="^")
@@ -124,6 +128,7 @@ def generate_trajectory_suite(
     output_dir: str = "outputs/trajectories",
     control_mode: str = "velocity",
     role_switching: bool = False,
+    user_mobile: bool = False,
 ) -> dict:
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -138,11 +143,12 @@ def generate_trajectory_suite(
     outputs = {}
     for method, model_path in methods:
         env = UAVEnvironment(
-            EnvConfig(
+            build_env_config(
                 seed=seed,
                 fading_model=fading_model,
                 control_mode=control_mode,
                 role_switching=role_switching,
+                user_mobile=user_mobile,
             )
         )
         trace = rollout_policy(env, method, model_path=model_path)
@@ -166,6 +172,7 @@ def _parse_args():
     parser.add_argument("--output-dir", type=str, default="outputs/trajectories", help="Output directory")
     parser.add_argument("--control-mode", type=str, default="velocity", choices=["velocity", "waypoint"])
     parser.add_argument("--role-switching", action="store_true")
+    parser.add_argument("--user-mobile", action="store_true", help="Enable mobile user during rollout")
     return parser.parse_args()
 
 
@@ -179,6 +186,7 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         control_mode=args.control_mode,
         role_switching=args.role_switching,
+        user_mobile=args.user_mobile,
     )
     print("Saved trajectory plots:")
     for method, path in outputs.items():

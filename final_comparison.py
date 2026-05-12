@@ -3,9 +3,10 @@ import csv
 from pathlib import Path
 
 from baselines import distance_greedy_policy, evaluate_policy, random_policy
-from Summer_Internship_2026.ddpg_evaluate import evaluate_ddpg_multi_seed
-from Summer_Internship_2026.dqn_evaluate import evaluate_dqn_multi_seed
-from Summer_Internship_2026.environment import EnvConfig
+from config_utils import build_env_config
+from ddpg_evaluate import evaluate_ddpg_multi_seed
+from dqn_evaluate import evaluate_dqn_multi_seed
+from environment import EnvConfig
 
 
 def _safe_import_matplotlib():
@@ -52,6 +53,10 @@ def run_final_comparison(
     seeds: list[int] | None = None,
     output_dir: str = "outputs/final_comparison",
     control_mode: str = "velocity",
+    user_mobile: bool = False,
+    use_los_model: bool = False,
+    observation_mode: str = "full",
+    normalize_observations: bool = True,
 ) -> dict:
     if seeds is None:
         seeds = [7, 21, 42, 84, 168]
@@ -61,7 +66,7 @@ def run_final_comparison(
 
     rows: list[dict] = []
     for fading_model in ["rician", "rayleigh"]:
-        env_cfg = EnvConfig(fading_model=fading_model, control_mode=control_mode)
+        env_cfg = build_env_config(fading_model=fading_model, control_mode=control_mode, user_mobile=user_mobile, use_los_model=use_los_model, observation_mode=observation_mode, normalize_observations=normalize_observations)
 
         random_summary = _aggregate_baseline(
             "Random Walk",
@@ -85,6 +90,10 @@ def run_final_comparison(
             output_dir=str(out_dir / f"dqn_{fading_model}_eval"),
             channel_model=fading_model,
             control_mode=control_mode,
+            user_mobile=user_mobile,
+            use_los_model=use_los_model,
+            observation_mode=observation_mode,
+            normalize_observations=normalize_observations,
         )["aggregate"]
 
         ddpg_result = evaluate_ddpg_multi_seed(
@@ -94,31 +103,40 @@ def run_final_comparison(
             output_dir=str(out_dir / f"ddpg_{fading_model}_eval"),
             channel_model=fading_model,
             control_mode=control_mode,
+            user_mobile=user_mobile,
+            use_los_model=use_los_model,
+            observation_mode=observation_mode,
+            normalize_observations=normalize_observations,
         )["aggregate"]
 
+        eh_meta = {"enable_energy_harvesting": False, "observation_has_eh": observation_mode == "full_eh"}
         rows.extend(
             [
                 {
                     "method": "Random Walk",
                     "fading_model": fading_model,
+                    **eh_meta,
                     "avg_rsec_mbps": random_summary["mean_avg_R_sec_mbps"],
                     "episode_secrecy_mbits": random_summary["mean_episode_secrecy_mbits"],
                 },
                 {
                     "method": "Distance-Greedy",
                     "fading_model": fading_model,
+                    **eh_meta,
                     "avg_rsec_mbps": greedy_summary["mean_avg_R_sec_mbps"],
                     "episode_secrecy_mbits": greedy_summary["mean_episode_secrecy_mbits"],
                 },
                 {
                     "method": "DQN",
                     "fading_model": fading_model,
+                    **eh_meta,
                     "avg_rsec_mbps": dqn_result["dqn_avg_rsec_mbps"],
                     "episode_secrecy_mbits": dqn_result["dqn_episode_secrecy_mbits"],
                 },
                 {
                     "method": "DDPG",
                     "fading_model": fading_model,
+                    **eh_meta,
                     "avg_rsec_mbps": ddpg_result["ddpg_avg_rsec_mbps"],
                     "episode_secrecy_mbits": ddpg_result["ddpg_episode_secrecy_mbits"],
                 },
@@ -211,6 +229,16 @@ def _parse_args():
         choices=["velocity", "waypoint"],
         help="Velocity-vector or normalized waypoint control",
     )
+    parser.add_argument("--user-mobile", action="store_true", help="Enable mobile user")
+    parser.add_argument("--use-los-model", action="store_true", help="Use LoS path-loss model")
+    parser.add_argument(
+        "--observation-mode",
+        type=str,
+        default="full",
+        choices=["full", "geometry", "channels"],
+        help="Observation space mode",
+    )
+    parser.add_argument("--no-normalize", action="store_true", help="Disable observation normalization")
     return parser.parse_args()
 
 
@@ -226,6 +254,10 @@ if __name__ == "__main__":
         seeds=seeds,
         output_dir=args.output_dir,
         control_mode=args.control_mode,
+        user_mobile=args.user_mobile,
+        use_los_model=args.use_los_model,
+        observation_mode=args.observation_mode,
+        normalize_observations=not args.no_normalize,
     )
 
     print("Final comparison complete:")

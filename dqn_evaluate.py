@@ -5,7 +5,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from Summer_Internship_2026.environment import EnvConfig, UAVEnvironment
+from environment import EnvConfig, UAVEnvironment
+from config_utils import build_env_config
 from baselines import distance_greedy_policy, evaluate_policy, random_policy
 from dqn_train import QNetwork, evaluate_dqn, make_action_table
 
@@ -18,12 +19,16 @@ def evaluate_dqn_multi_seed(
     channel_model: str = "rician",
     rician_k: float = 5.0,
     control_mode: str = "velocity",
+    user_mobile: bool = False,
+    use_los_model: bool = False,
+    observation_mode: str = "full",
+    normalize_observations: bool = True,
 ) -> dict:
     if seeds is None:
         seeds = [7, 21, 42, 84, 168]
 
     action_table = make_action_table()
-    env_cfg = EnvConfig(seed=0, fading_model=channel_model, rician_k=rician_k, control_mode=control_mode)
+    env_cfg = build_env_config(seed=0, fading_model=channel_model, rician_k=rician_k, control_mode=control_mode, user_mobile=user_mobile, use_los_model=use_los_model, observation_mode=observation_mode, normalize_observations=normalize_observations)
     state_dim = UAVEnvironment(env_cfg).reset().shape[0]
     action_dim = len(action_table)
 
@@ -34,7 +39,7 @@ def evaluate_dqn_multi_seed(
 
     rows = []
     for seed in seeds:
-        eval_cfg = EnvConfig(seed=seed, fading_model=channel_model, rician_k=rician_k, control_mode=control_mode)
+        eval_cfg = build_env_config(seed=seed, fading_model=channel_model, rician_k=rician_k, control_mode=control_mode, user_mobile=user_mobile, use_los_model=use_los_model, observation_mode=observation_mode, normalize_observations=normalize_observations)
         env = UAVEnvironment(eval_cfg)
         dqn = evaluate_dqn(env, q_net, action_table, device=device, episodes=episodes_per_seed)
         rnd = evaluate_policy(
@@ -56,6 +61,12 @@ def evaluate_dqn_multi_seed(
             {
                 "seed": seed,
                 "fading_model": channel_model,
+                "user_mobile": user_mobile,
+                "use_los_model": use_los_model,
+                "observation_mode": observation_mode,
+                "normalize_observations": normalize_observations,
+                "enable_energy_harvesting": False,
+                "observation_has_eh": observation_mode == "full_eh",
                 "dqn_avg_rsec_mbps": dqn["mean_avg_rsec_mbps"],
                 "dqn_episode_secrecy_mbits": dqn["mean_episode_secrecy_mbits"],
                 "random_avg_rsec_mbps": rnd["mean_avg_R_sec_mbps"],
@@ -107,6 +118,16 @@ def _parse_args():
         choices=["velocity", "waypoint"],
         help="Velocity-vector or normalized waypoint control",
     )
+    parser.add_argument("--user-mobile", action="store_true", help="Enable mobile user")
+    parser.add_argument("--use-los-model", action="store_true", help="Use LoS path-loss model")
+    parser.add_argument(
+        "--observation-mode",
+        type=str,
+        default="full",
+        choices=["full", "geometry", "channels"],
+        help="Observation space mode",
+    )
+    parser.add_argument("--no-normalize", action="store_true", help="Disable observation normalization")
     return parser.parse_args()
 
 
@@ -121,6 +142,10 @@ if __name__ == "__main__":
         channel_model=args.channel_model,
         rician_k=args.rician_k,
         control_mode=args.control_mode,
+        user_mobile=args.user_mobile,
+        use_los_model=args.use_los_model,
+        observation_mode=args.observation_mode,
+        normalize_observations=not args.no_normalize,
     )
 
     agg = result["aggregate"]
