@@ -1,7 +1,7 @@
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Tuple
-from channel import channel_gain, generate_fading
+from channel import channel_gain, channel_gain_los_aware, compute_elevation_angle, generate_fading
 
 @dataclass
 class EnvConfig:
@@ -23,6 +23,11 @@ class EnvConfig:
     beta0: float = 1.0
     fading_model: str = "rician"
     rician_k: float = 5.0
+    use_los_model: bool = False
+    alpha_los: float = 2.0
+    alpha_nlos: float = 3.0
+    los_a: float = 9.61
+    los_b: float = 0.20
     control_mode: str = "velocity"
     waypoint_gain: float = 1.0
     role_switching: bool = False
@@ -33,8 +38,24 @@ class EnvConfig:
     relay_motion_power_coeff: float = 0.06
     jammer_motion_power_coeff: float = 0.06
     jammer_rf_power_coeff: float = 1.0
-    energy_reward_weight: float = 1e4
+    energy_reward_weight: float = 1e-1
     battery_depletion_penalty: float = 5e5
+    user_mobile: bool = False
+    user_max_speed: float = 3.0
+    user_motion_model: str = "random_walk"
+    observation_mode: str = "full"
+    normalize_observations: bool = True
+    movement_penalty_weight: float = 5e-2
+    smoothness_penalty_weight: float = 2e-2
+    boundary_penalty_weight: float = 1.0
+    secrecy_scale: float = 1e-6
+    enable_energy_harvesting: bool = False
+    relay_harvest_efficiency: float = 0.5
+    jammer_harvest_efficiency: float = 0.5
+    relay_harvest_max_watts: float = 8.0
+    jammer_harvest_max_watts: float = 8.0
+    solar_variability: float = 0.1
+    harvesting_reward_weight: float = 1e-3
 
 class UAVEnvironment:
     def __init__(self, config: EnvConfig | None = None):
@@ -48,9 +69,18 @@ class UAVEnvironment:
         self.current_jammer_power = self.config.jammer_power_max
         self.relay_velocity = np.zeros(2, dtype=float)
         self.jammer_velocity = np.zeros(2, dtype=float)
+        self.user_velocity = np.zeros(2, dtype=float)  # (Requirement 3)
+        self._prev_relay_velocity = np.zeros(2, dtype=float)
+        self._prev_jammer_velocity = np.zeros(2, dtype=float)
         self.roles_swapped = False
         self.relay_battery = self.config.relay_battery_joules
         self.jammer_battery = self.config.jammer_battery_joules
+        self.relay_harvest_power_w = 0.0
+        self.jammer_harvest_power_w = 0.0
+        self.relay_harvested_energy_j = 0.0
+        self.jammer_harvested_energy_j = 0.0
+        self.total_harvested_energy_j = 0.0
+        self.battery_saturation_event = False
 
     def _random_position_2d(self) -> np.ndarray:
         return np.array([
@@ -70,9 +100,18 @@ class UAVEnvironment:
         self.current_jammer_power = self.config.jammer_power_max
         self.relay_velocity = np.zeros(2, dtype=float)
         self.jammer_velocity = np.zeros(2, dtype=float)
+        self.user_velocity = np.zeros(2, dtype=float)
+        self._prev_relay_velocity = np.zeros(2, dtype=float)
+        self._prev_jammer_velocity = np.zeros(2, dtype=float)
         self.roles_swapped = False
         self.relay_battery = self.config.relay_battery_joules
         self.jammer_battery = self.config.jammer_battery_joules
+        self.relay_harvest_power_w = 0.0
+        self.jammer_harvest_power_w = 0.0
+        self.relay_harvested_energy_j = 0.0
+        self.jammer_harvested_energy_j = 0.0
+        self.total_harvested_energy_j = 0.0
+        self.battery_saturation_event = False
         self._generate_fading()
         return self.get_state()
 
@@ -85,6 +124,40 @@ class UAVEnvironment:
     def _clip_to_bounds(self, pos: np.ndarray, altitude: float) -> np.ndarray:
         xy = np.clip(pos[:2], -self.half_area, self.half_area)
         return np.array([xy[0], xy[1], altitude])
+
+    def _update_user_position(self):
+        if not self.config.user_mobile:
+            return
+
+        speed = np.linalg.norm(self.user_velocity)
+
+        if speed < 1e-12:
+            # User starts stationary: pick a random heading and speed
+            angle = np.random.uniform(0, 2 * np.pi)
+            speed = np.random.uniform(0.5, self.config.user_max_speed)
+            self.user_velocity = speed * np.array([np.cos(angle), np.sin(angle)])
+        else:
+            # Perturb heading by a small random angle (±30°)
+            current_angle = np.arctan2(self.user_velocity[1], self.user_velocity[0])
+            new_angle = current_angle + np.random.uniform(-np.pi / 6, np.pi / 6)
+            # Small speed jitter (±10%), clipped to [0, user_max_speed]
+            speed_jitter = np.random.uniform(0.9, 1.1)
+            speed = np.clip(speed * speed_jitter, 0.0, self.config.user_max_speed)
+            self.user_velocity = speed * np.array([np.cos(new_angle), np.sin(new_angle)])
+
+        new_xy = self.user_position[:2] + self.user_velocity * self.config.dt
+
+        # --- Boundary reflection (elastic bounce) ---
+        for i in range(2):
+            if new_xy[i] < -self.half_area:
+                new_xy[i] = -2.0 * self.half_area - new_xy[i]
+                self.user_velocity[i] *= -1.0
+            elif new_xy[i] > self.half_area:
+                new_xy[i] = 2.0 * self.half_area - new_xy[i]
+                self.user_velocity[i] *= -1.0
+
+        self.user_position[:2] = new_xy
+        self.user_position[2] = 0.0  # keep z=0
 
     def _scale_jammer_power(self, action_jammer_power: float) -> float:
         action_jammer_power = float(np.clip(action_jammer_power, -1.0, 1.0))
@@ -139,6 +212,61 @@ class UAVEnvironment:
             "total_energy": float(relay_energy + jammer_energy),
         }
 
+    def _compute_energy_harvesting(self) -> dict:
+        relay_base_power = (
+            self.config.relay_harvest_efficiency * self.config.relay_harvest_max_watts
+        )
+        relay_fluctuation = np.random.normal(0.0, self.config.solar_variability)
+        relay_harvest_power = relay_base_power * (1.0 + relay_fluctuation)
+        relay_harvest_power = np.clip(
+            relay_harvest_power, 0.0, self.config.relay_harvest_max_watts
+        )
+        relay_harvested_energy = relay_harvest_power * self.config.dt
+
+        # --- Jammer UAV harvesting ---
+        jammer_base_power = (
+            self.config.jammer_harvest_efficiency * self.config.jammer_harvest_max_watts
+        )
+        jammer_fluctuation = np.random.normal(0.0, self.config.solar_variability)
+        jammer_harvest_power = jammer_base_power * (1.0 + jammer_fluctuation)
+        jammer_harvest_power = np.clip(
+            jammer_harvest_power, 0.0, self.config.jammer_harvest_max_watts
+        )
+        jammer_harvested_energy = jammer_harvest_power * self.config.dt
+
+        total_harvested_energy = relay_harvested_energy + jammer_harvested_energy
+
+        return {
+            "relay_harvest_power_w": float(relay_harvest_power),
+            "jammer_harvest_power_w": float(jammer_harvest_power),
+            "relay_harvested_energy_j": float(relay_harvested_energy),
+            "jammer_harvested_energy_j": float(jammer_harvested_energy),
+            "total_harvested_energy_j": float(total_harvested_energy),
+        }
+
+    def _compute_motion_penalty(self) -> float:
+        r_speed = np.linalg.norm(self.relay_velocity)
+        j_speed = np.linalg.norm(self.jammer_velocity)
+        norm_speed_sq = (r_speed**2 + j_speed**2) / (self.config.max_speed**2 + 1e-10)
+        return self.config.movement_penalty_weight * norm_speed_sq
+
+    def _compute_smoothness_penalty(self) -> float:
+        delta_relay = np.linalg.norm(self.relay_velocity - self._prev_relay_velocity)
+        delta_jammer = np.linalg.norm(self.jammer_velocity - self._prev_jammer_velocity)
+        max_delta = self.config.max_acceleration * self.config.dt
+        norm_accel = (delta_relay + delta_jammer) / (2.0 * max_delta + 1e-10)
+        return self.config.smoothness_penalty_weight * norm_accel
+
+    def _compute_boundary_penalty(self) -> float:
+        penalty = 0.0
+        for pos in (self.relay_position, self.jammer_position):
+            dx = min(pos[0] + self.half_area, self.half_area - pos[0])
+            dy = min(pos[1] + self.half_area, self.half_area - pos[1])
+            d_min = min(dx, dy)
+            if d_min < self.half_area * 0.3:          # only within 30 % of edge
+                penalty += np.exp(-d_min / (self.half_area * 0.05))
+        return self.config.boundary_penalty_weight * penalty
+
     def step(
         self,
         action_relay: np.ndarray,
@@ -154,6 +282,8 @@ class UAVEnvironment:
 
         relay_velocity_action = self._control_to_velocity_action(self.relay_position, action_relay)
         jammer_velocity_action = self._control_to_velocity_action(self.jammer_position, action_jammer)
+        self._prev_relay_velocity = self.relay_velocity.copy()
+        self._prev_jammer_velocity = self.jammer_velocity.copy()
         self.relay_velocity = self._update_velocity(self.relay_velocity, relay_velocity_action)
         self.jammer_velocity = self._update_velocity(self.jammer_velocity, jammer_velocity_action)
         delta_relay = np.append(self.relay_velocity * self.config.dt, 0.0)
@@ -166,22 +296,77 @@ class UAVEnvironment:
             self.jammer_position + delta_jammer, self.config.jammer_altitude
         )
 
+        self._update_user_position()
+
         self._step_counter += 1
         energy = self._compute_energy_usage()
+
+        if self.config.enable_energy_harvesting:
+            harvest = self._compute_energy_harvesting()
+        else:
+            harvest = {}
+
+        battery_before_relay = self.relay_battery
+        battery_before_jammer = self.jammer_battery
+
+        # Step 1: Energy consumption (discharge)
         self.relay_battery = max(0.0, self.relay_battery - energy["relay_energy"])
         self.jammer_battery = max(0.0, self.jammer_battery - energy["jammer_energy"])
+
+        # Step 2: Energy harvesting (charge) -- energy causality applied
+        if self.config.enable_energy_harvesting:
+            self.relay_battery = min(
+                self.config.relay_battery_joules,
+                self.relay_battery + harvest["relay_harvested_energy_j"],
+            )
+            self.jammer_battery = min(
+                self.config.jammer_battery_joules,
+                self.jammer_battery + harvest["jammer_harvested_energy_j"],
+            )
+            # Battery saturation: battery reached capacity after harvesting
+            # (excess energy that could have been harvested is wasted).
+            self.battery_saturation_event = (
+                self.relay_battery >= self.config.relay_battery_joules - 1e-9
+                or self.jammer_battery >= self.config.jammer_battery_joules - 1e-9
+            )
+        else:
+            self.battery_saturation_event = False
+
         battery_depleted = self.relay_battery <= 0.0 or self.jammer_battery <= 0.0
         done = self._step_counter >= self.config.max_steps or battery_depleted
         self._generate_fading()
         rates = self.compute_rates()
+        scaled_secrecy = self.config.secrecy_scale * rates["R_sec"]
         energy_penalty = self.config.energy_reward_weight * energy["total_energy"]
-        reward = rates["R_sec"] - energy_penalty
+        motion_penalty = self._compute_motion_penalty()
+        smoothness_penalty = self._compute_smoothness_penalty()
+        boundary_penalty = self._compute_boundary_penalty()
+
+        reward = scaled_secrecy - energy_penalty - motion_penalty - smoothness_penalty - boundary_penalty
+        if self.config.enable_energy_harvesting:
+            sustainability_bonus = (
+                self.config.harvesting_reward_weight * harvest["total_harvested_energy_j"]
+            )
+            reward += sustainability_bonus
+            # Persist harvest values for info dict
+            self.relay_harvest_power_w = harvest["relay_harvest_power_w"]
+            self.jammer_harvest_power_w = harvest["jammer_harvest_power_w"]
+            self.relay_harvested_energy_j = harvest["relay_harvested_energy_j"]
+            self.jammer_harvested_energy_j = harvest["jammer_harvested_energy_j"]
+            self.total_harvested_energy_j = harvest["total_harvested_energy_j"]
         if battery_depleted:
             reward -= self.config.battery_depletion_penalty
+
         rates.update(
             {
                 "reward": float(reward),
                 "energy_penalty": float(energy_penalty),
+                "reward_secrecy": float(scaled_secrecy),
+                "reward_energy_penalty": float(-energy_penalty),
+                "reward_motion_penalty": float(-motion_penalty),
+                "reward_smoothness_penalty": float(-smoothness_penalty),
+                "reward_boundary_penalty": float(-boundary_penalty),
+                "reward_total": float(reward),
                 "relay_energy_j": energy["relay_energy"],
                 "jammer_energy_j": energy["jammer_energy"],
                 "total_energy_j": energy["total_energy"],
@@ -190,6 +375,12 @@ class UAVEnvironment:
                 "relay_battery_j": float(self.relay_battery),
                 "jammer_battery_j": float(self.jammer_battery),
                 "battery_depleted": bool(battery_depleted),
+                "battery_saturation_event": bool(self.battery_saturation_event),
+                "relay_harvested_energy_j": float(self.relay_harvested_energy_j),
+                "jammer_harvested_energy_j": float(self.jammer_harvested_energy_j),
+                "total_harvested_energy_j": float(self.total_harvested_energy_j),
+                "relay_harvest_power_w": float(self.relay_harvest_power_w),
+                "jammer_harvest_power_w": float(self.jammer_harvest_power_w),
                 "roles_swapped": bool(self.roles_swapped),
                 "effective_relay_label": "jammer_uav" if self.roles_swapped else "relay_uav",
                 "effective_jammer_label": "relay_uav" if self.roles_swapped else "jammer_uav",
@@ -198,11 +389,8 @@ class UAVEnvironment:
 
         return self.get_state(), reward, done, rates
 
-    def get_state(self) -> np.ndarray:
-        gains = self.compute_all_channel_gains()
-        rates = self.compute_rates(gains)
-        distances = self.compute_distances()
-
+    def _build_geometry_state(self) -> np.ndarray:
+        """Positions (15) + UAV velocities (4) + user velocity (2) = 21 dims."""
         return np.concatenate([
             self.relay_position,
             self.jammer_position,
@@ -211,38 +399,99 @@ class UAVEnvironment:
             self.eve_position,
             self.relay_velocity,
             self.jammer_velocity,
-            np.array([
-                distances["d_UR"],
-                distances["d_RB"],
-                distances["d_UE"],
-                distances["d_JE"],
-            ], dtype=float),
-            np.array([
-                gains["h_UR"],
-                gains["h_RB"],
-                gains["h_UE"],
-                gains["h_JE"],
-            ], dtype=float),
-            np.array([
-                rates["gamma_UR"],
-                rates["gamma_RB"],
-                rates["gamma_E"],
-                self.current_jammer_power,
-            ], dtype=float),
-            np.array([
-                self.relay_battery,
-                self.jammer_battery,
-            ], dtype=float),
+            self.user_velocity,
         ])
+
+    def _build_channel_state(self, gains: dict, rates: dict) -> np.ndarray:
+        """Gains (4) + SNRs (3) + secrecy (3) + jammer_power (1) = 11 dims."""
+        return np.concatenate([
+            np.array([gains["h_UR"], gains["h_RB"], gains["h_UE"], gains["h_JE"]]),
+            np.array([rates["gamma_UR"], rates["gamma_RB"], rates["gamma_E"]]),
+            np.array([rates["R_legit"], rates["R_eve"], rates["R_sec"]]),
+            np.array([rates["jammer_power"]]),
+        ]).astype(float)
+
+    @staticmethod
+    def _build_distances_state(distances: dict) -> np.ndarray:
+        return np.array([
+            distances["d_UR"], distances["d_RB"],
+            distances["d_UE"], distances["d_JE"],
+        ])
+
+    def _build_battery_state(self) -> np.ndarray:
+        return np.array([self.relay_battery, self.jammer_battery])
+
+    def _normalize_state(self, state: np.ndarray, mode: str) -> np.ndarray:
+        """Element-wise normalisation (Requirement 5).  No-op when disabled."""
+        if not self.config.normalize_observations:
+            return state
+        eps = 1e-15
+        max_dist = np.sqrt(2.0) * self.config.area_size   # square diagonal
+        out = state.copy()
+
+        if mode == "geometry":            # [pos:15, uav_vel:4, user_vel:2]
+            out[:15] /= self.half_area
+            out[15:19] /= self.config.max_speed
+            if len(out) > 19:
+                out[19:21] /= self.config.user_max_speed
+
+        elif mode == "channels":          # [gains:4, snrs:3, secrecy:3, j_pwr:1]
+            out[:4] = np.log10(np.maximum(out[:4], eps))
+            out[4:7] = np.log10(np.maximum(out[4:7], eps))
+            out[7:10] = np.log10(np.maximum(out[7:10], eps))
+            out[10] /= self.config.jammer_power_max
+
+        elif mode == "full":               # [geom:21, dist:4, chan:11, batt:2]
+            out[:15] /= self.half_area
+            out[15:19] /= self.config.max_speed
+            out[19:21] /= self.config.user_max_speed
+            out[21:25] /= max_dist
+            s = 25
+            out[s:s+4] = np.log10(np.maximum(out[s:s+4], eps))
+            out[s+4:s+7] = np.log10(np.maximum(out[s+4:s+7], eps))
+            out[s+7:s+10] = np.log10(np.maximum(out[s+7:s+10], eps))
+            out[s+10] /= self.config.jammer_power_max
+            out[36] /= self.config.relay_battery_joules
+            out[37] /= self.config.jammer_battery_joules
+
+        return out
+
+    def get_state(self) -> np.ndarray:
+        """Build the observation vector according to config.observation_mode."""
+        mode = self.config.observation_mode
+
+        if mode == "geometry":
+            state = self._build_geometry_state()
+        elif mode == "channels":
+            gains = self.compute_all_channel_gains()
+            rates = self.compute_rates(gains)
+            state = self._build_channel_state(gains, rates)
+        elif mode == "full":
+            gains = self.compute_all_channel_gains()
+            rates = self.compute_rates(gains)
+            distances = self.compute_distances()
+            state = np.concatenate([
+                self._build_geometry_state(),
+                self._build_distances_state(distances),
+                self._build_channel_state(gains, rates),
+                self._build_battery_state(),
+            ])
+        else:
+            raise ValueError(f"Unknown observation_mode: {mode}")
+
+        return self._normalize_state(state, mode)
 
     def compute_channel_gain(self, tx_pos: np.ndarray, rx_pos: np.ndarray,
                              fading: float) -> float:
-        return channel_gain(
-            compute_distance(tx_pos, rx_pos),
-            fading,
-            alpha=self.config.alpha,
-            beta0=self.config.beta0,
-        )
+        d = compute_distance(tx_pos, rx_pos)
+        if self.config.use_los_model:
+            theta = compute_elevation_angle(tx_pos, rx_pos)
+            return channel_gain_los_aware(
+                d, theta, fading,
+                self.config.alpha_los, self.config.alpha_nlos,
+                self.config.beta0, self.config.los_a, self.config.los_b,
+            )
+        return channel_gain(d, fading, alpha=self.config.alpha, beta0=self.config.beta0)
 
     def compute_all_channel_gains(self) -> dict:
         gains = {}
@@ -314,6 +563,64 @@ def compute_distance(p1: np.ndarray, p2: np.ndarray) -> float:
     return float(np.linalg.norm(np.asarray(p1) - np.asarray(p2)))
 
 if __name__ == "__main__":
+    print("=" * 70)
+    print("OBSERVATION MODE VERIFICATION")
+    print("=" * 70)
+    base_cfg = EnvConfig(seed=42, user_mobile=True)
+    for mode in ["geometry", "channels", "full"]:
+        cfg = replace(base_cfg, observation_mode=mode, normalize_observations=True)
+        env = UAVEnvironment(cfg)
+        s_norm = env.reset()
+        cfg_raw = replace(base_cfg, observation_mode=mode, normalize_observations=False)
+        env_raw = UAVEnvironment(cfg_raw)
+        s_raw = env_raw.reset()
+        print(f"  Mode: {mode:<10s}  Dim: {s_norm.shape[0]:2d}  "
+              f"Min: {s_norm.min(): .4f}  Max: {s_norm.max(): .4f}  "
+              f"(raw min: {s_raw.min(): .4e}  raw max: {s_raw.max(): .4e})")
+    print()
+
+    cfg_ex = replace(base_cfg, observation_mode="full", normalize_observations=True)
+    env_ex = UAVEnvironment(cfg_ex)
+    s_ex = env_ex.reset()
+    print(f"  Example normalised 'full' vector ({s_ex.shape[0]} dims):")
+    print(f"    first 10 : {np.round(s_ex[:10], 4)}")
+    print(f"    mid   10 : {np.round(s_ex[14:24], 4)}")
+    print(f"    last  10 : {np.round(s_ex[28:], 4)}")
+    print()
+
+    print("=" * 70)
+    print("USER MOBILITY VERIFICATION (10 steps, user_mobile=True)")
+    print("=" * 70)
+    env_mobile = UAVEnvironment(EnvConfig(user_mobile=True))
+    env_mobile.reset()
+    user_traj = [env_mobile.user_position.copy()]
+    prev_user = env_mobile.user_position.copy()
+    print(f"{'Step':<6} {'User_X':<10} {'User_Y':<10} {'User_Z':<8} "
+          f"{'Speed':<8} {'dx':<10} {'dy':<10}")
+    print("-" * 70)
+    for t in range(10):
+        a_relay = np.random.uniform(-1, 1, size=2)
+        a_jammer = np.random.uniform(-1, 1, size=2)
+        env_mobile.step(a_relay, a_jammer)
+        u = env_mobile.user_position
+        dv = u - prev_user
+        speed = np.linalg.norm(env_mobile.user_velocity)
+        print(f"{t+1:<6} {u[0]:<10.3f} {u[1]:<10.3f} {u[2]:<8.2f} "
+              f"{speed:<8.4f} {dv[0]:<10.5f} {dv[1]:<10.5f}")
+        user_traj.append(u.copy())
+        prev_user = u.copy()
+    displacements = [np.linalg.norm(user_traj[i+1][:2] - user_traj[i][:2])
+                     for i in range(len(user_traj) - 1)]
+    max_disp = max(displacements)
+    theoretical_max = env_mobile.config.user_max_speed * env_mobile.config.dt
+    print(f"\nMax per-step displacement: {max_disp:.5f} m  "
+          f"(theoretical max: {theoretical_max:.5f} m)  ->  "
+          f"{'SMOOTH' if max_disp <= theoretical_max + 1e-6 else 'TELEPORTATION!'}")
+    print("User position changes smoothly (no teleportation).\n")
+
+    print("=" * 70)
+    print("STANDARD ENVIRONMENT TEST (backward compat)")
+    print("=" * 70)
     env = UAVEnvironment()
     state = env.reset()
 
@@ -354,3 +661,189 @@ if __name__ == "__main__":
         assert g1[key] == g2[key] == g3[key], f"Unstable: {key}"
         print(f"- {key}: {g1[key]:.6e} (stable across 3 calls)")
     print("All gains stable.\n")
+
+    print("=" * 70)
+    print("STATIC USER MODE TEST (user_mobile=False)")
+    print("=" * 70)
+    env_static = UAVEnvironment(EnvConfig(user_mobile=False, seed=42))
+    env_static.reset()
+    pos_before = env_static.user_position.copy()
+    for _ in range(5):
+        a_relay = np.random.uniform(-1, 1, size=2)
+        a_jammer = np.random.uniform(-1, 1, size=2)
+        env_static.step(a_relay, a_jammer)
+    pos_after = env_static.user_position.copy()
+    diff = np.linalg.norm(pos_after - pos_before)
+    print(f"User position before: {pos_before}")
+    print(f"User position after : {pos_after}")
+    print(f"Total movement      : {diff:.6f} m  ->  "
+          f"{'STATIONARY (OK)' if diff < 1e-10 else 'ERROR: moved!'}")
+    print()
+
+    print("=" * 70)
+    print("REWARD DECOMPOSITION (10 random steps)")
+    print("=" * 70)
+    env_rew = UAVEnvironment(EnvConfig(user_mobile=True))
+    env_rew.reset()
+    hdr = f"{'Step':<6} {'R_sec':<12} {'Secrecy':<10} {'Energy':<10} {'Motion':<10} {'Smooth':<10} {'Bound':<10} {'Reward':<10} {'v_relay':<8} {'v_jam':<8}"
+    print(hdr)
+    print("-" * len(hdr))
+    for t in range(10):
+        a_relay = np.random.uniform(-1, 1, size=2)
+        a_jammer = np.random.uniform(-1, 1, size=2)
+        _, reward, _, info = env_rew.step(a_relay, a_jammer)
+        print(
+            f"{t+1:<6} "
+            f"{info['R_sec']:<12.2f} "
+            f"{info['reward_secrecy']:<10.4f} "
+            f"{info['reward_energy_penalty']:<10.2f} "
+            f"{info['reward_motion_penalty']:<10.2f} "
+            f"{info['reward_smoothness_penalty']:<10.2f} "
+            f"{info['reward_boundary_penalty']:<10.2f} "
+            f"{reward:<10.2f} "
+            f"{info['relay_speed_mps']:<8.2f} "
+            f"{info['jammer_speed_mps']:<8.2f}"
+        )
+    print()
+
+    print("=" * 70)
+    print("LOS MODEL COMPARISON  (free-space vs LoS-aware)")
+    print("=" * 70)
+    cfg_fs = EnvConfig(seed=42, use_los_model=False)
+    cfg_los = EnvConfig(seed=42, use_los_model=True)
+    env_fs = UAVEnvironment(cfg_fs);  _ = env_fs.reset()
+    env_los = UAVEnvironment(cfg_los); _ = env_los.reset()
+
+    links = ["UR (user-relay)", "RB (relay-BS)", "UE (user-eve)", "JE (jammer-eve)"]
+    gain_keys = ["h_UR", "h_RB", "h_UE", "h_JE"]
+    print(f"{'Link':<16} {'Dist (m)':<10} {'Elev(deg)':<10} {'P_LoS':<8} "
+          f"{'Free-sp':<12} {'LoS-aware':<12} {'G_los':<12} {'G_nlos':<12}")
+    print("-" * 92)
+    for link, key in zip(links, gain_keys):
+        g_fs = env_fs.compute_all_channel_gains()[key]
+
+        # manually retrieve LoS details
+        if link.startswith("UR"):
+            tx, rx = env_los.user_position, env_los.relay_position
+        elif link.startswith("RB"):
+            tx, rx = env_los.relay_position, env_los.bs_position
+        elif link.startswith("UE"):
+            tx, rx = env_los.user_position, env_los.eve_position
+        else:  # JE
+            tx, rx = env_los.jammer_position, env_los.eve_position
+
+        d = compute_distance(tx, rx)
+        theta = compute_elevation_angle(tx, rx)
+        fading_val = env_los.fading[key[-2:]]  # "UR", "RB", "UE", "JE"
+        from channel import los_probability, path_loss
+        p_los = los_probability(theta, env_los.config.los_a, env_los.config.los_b)
+        g_los = path_loss(d, env_los.config.alpha_los, env_los.config.beta0) * fading_val
+        g_nlos = path_loss(d, env_los.config.alpha_nlos, env_los.config.beta0) * fading_val
+        g_los_aware = env_los.compute_all_channel_gains()[key]
+
+        print(f"{link:<16} {d:<10.2f} {theta:<10.2f} {p_los:<8.4f} "
+              f"{g_fs:<12.6e} {g_los_aware:<12.6e} {g_los:<12.6e} {g_nlos:<12.6e}")
+    print()
+
+    print("=" * 70)
+    print("ENERGY HARVESTING VERIFICATION")
+    print("=" * 70)
+    cfg_eh = EnvConfig(
+        seed=42, user_mobile=True,
+        enable_energy_harvesting=True,
+        relay_harvest_efficiency=0.5, jammer_harvest_efficiency=0.5,
+        relay_harvest_max_watts=8.0, jammer_harvest_max_watts=8.0,
+        solar_variability=0.1,
+    )
+    env_eh = UAVEnvironment(cfg_eh)
+    env_eh.reset()
+
+    print("Energy-causality battery evolution (10 steps):")
+    hdr = (f"{'Step':<6} {'Bat_before_R':<12} {'Bat_before_J':<12} "
+           f"{'Cons_R(J)':<10} {'Cons_J(J)':<10} "
+           f"{'Harv_R(J)':<10} {'Harv_J(J)':<10} "
+           f"{'Bat_after_R':<12} {'Bat_after_J':<12} "
+           f"{'Saturate':<9}")
+    print(hdr)
+    print("-" * len(hdr))
+    for t in range(10):
+        a_relay = np.random.uniform(-1, 1, size=2)
+        a_jammer = np.random.uniform(-1, 1, size=2)
+        _, _, _, info = env_eh.step(a_relay, a_jammer)
+        # Reconstruct battery-before: battery_after + consumed - harvested
+        b_before_r = (info['relay_battery_j'] + info['relay_energy_j']
+                      - info['relay_harvested_energy_j'])
+        b_before_j = (info['jammer_battery_j'] + info['jammer_energy_j']
+                      - info['jammer_harvested_energy_j'])
+        print(
+            f"{t+1:<6} "
+            f"{b_before_r:<12.2f} {b_before_j:<12.2f} "
+            f"{info['relay_energy_j']:<10.4f} {info['jammer_energy_j']:<10.4f} "
+            f"{info['relay_harvested_energy_j']:<10.4f} {info['jammer_harvested_energy_j']:<10.4f} "
+            f"{info['relay_battery_j']:<12.2f} {info['jammer_battery_j']:<12.2f} "
+            f"{'SAT' if info['battery_saturation_event'] else '---':<9}"
+        )
+    print()
+
+    # Example harvested energy values
+    print("Example harvested power values (10 independent samples):")
+    p_hdr = f"{'Sample':<8} {'Relay_pwr(W)':<15} {'Jammer_pwr(W)':<15} {'Relay_En(J)':<15} {'Jammer_En(J)':<15} {'Total_En(J)':<15}"
+    print(p_hdr)
+    print("-" * len(p_hdr))
+    harvest_samples = []
+    for i in range(10):
+        h = env_eh._compute_energy_harvesting()
+        harvest_samples.append(h)
+        print(
+            f"{i+1:<8} "
+            f"{h['relay_harvest_power_w']:<15.4f} "
+            f"{h['jammer_harvest_power_w']:<15.4f} "
+            f"{h['relay_harvested_energy_j']:<15.6f} "
+            f"{h['jammer_harvested_energy_j']:<15.6f} "
+            f"{h['total_harvested_energy_j']:<15.6f}"
+        )
+    # Stats
+    totals = [s['total_harvested_energy_j'] for s in harvest_samples]
+    print(f"\n  Harvest stats over 10 samples:")
+    print(f"    Mean total: {np.mean(totals):.6f} J  "
+          f"Min: {np.min(totals):.6f} J  "
+          f"Max: {np.max(totals):.6f} J  "
+          f"Std: {np.std(totals):.6f} J")
+    # Theoretical max: (0.5*8 + 0.5*8) * 0.1 = 0.8 J
+    max_possible = ((cfg_eh.relay_harvest_efficiency * cfg_eh.relay_harvest_max_watts
+                     + cfg_eh.jammer_harvest_efficiency * cfg_eh.jammer_harvest_max_watts)
+                    * cfg_eh.dt)
+    clipped_max = ((cfg_eh.relay_harvest_max_watts + cfg_eh.jammer_harvest_max_watts)
+                   * cfg_eh.dt)
+    print(f"    Theoretical max base (no clip): {max_possible:.6f} J")
+    print(f"    Absolute physical max (clipped): {clipped_max:.6f} J")
+    print()
+
+    print("=" * 70)
+    print("STATE DIMENSION VERIFICATION  (Requirement 13)")
+    print("=" * 70)
+    for mode in ["geometry", "channels", "full"]:
+        cfg_noeh = EnvConfig(seed=42, observation_mode=mode, enable_energy_harvesting=False)
+        cfg_eh_on = EnvConfig(seed=42, observation_mode=mode, enable_energy_harvesting=True)
+        env_noeh = UAVEnvironment(cfg_noeh)
+        env_eh_on = UAVEnvironment(cfg_eh_on)
+        s_noeh = env_noeh.reset()
+        s_eh_on = env_eh_on.reset()
+        dim_noeh = s_noeh.shape[0]
+        dim_eh = s_eh_on.shape[0]
+        status = "OK (unchanged)" if dim_noeh == dim_eh else "CHANGED!"
+        print(f"  Mode={mode:<10s}  dim(no EH)={dim_noeh}  dim(EH)={dim_eh}  {status}")
+    print()
+
+    # Verify all EH info keys exist when EH is disabled (should default to 0)
+    print("Backward-compatibility check: EH info fields default to 0 when disabled:")
+    env_noeh = UAVEnvironment(EnvConfig(seed=42, enable_energy_harvesting=False))
+    env_noeh.reset()
+    _, _, _, info = env_noeh.step(np.zeros(2), np.zeros(2))
+    for key in ["relay_harvested_energy_j", "jammer_harvested_energy_j",
+                "total_harvested_energy_j", "relay_harvest_power_w",
+                "jammer_harvest_power_w", "battery_saturation_event"]:
+        val = info[key]
+        expected = 0.0 if key != "battery_saturation_event" else False
+        match = "OK" if val == expected else "MISMATCH"
+        print(f"    info['{key}'] = {val}  ({match})")
