@@ -6,8 +6,8 @@ import numpy as np
 import torch
 
 from baselines import distance_greedy_policy, evaluate_policy, random_policy
-from ddpg_train import Actor, evaluate_ddpg
-from environment import EnvConfig, UAVEnvironment
+from Summer_Internship_2026.ddpg_train import Actor, evaluate_ddpg
+from Summer_Internship_2026.environment import EnvConfig, UAVEnvironment
 
 
 def evaluate_ddpg_multi_seed(
@@ -17,22 +17,38 @@ def evaluate_ddpg_multi_seed(
     output_dir: str = "outputs/ddpg_eval",
     channel_model: str = "rician",
     rician_k: float = 5.0,
+    control_mode: str = "velocity",
+    role_switching: bool = False,
 ) -> dict:
     if seeds is None:
         seeds = [7, 21, 42, 84, 168]
 
-    env_cfg = EnvConfig(seed=0, fading_model=channel_model, rician_k=rician_k)
+    env_cfg = EnvConfig(
+        seed=0,
+        fading_model=channel_model,
+        rician_k=rician_k,
+        control_mode=control_mode,
+        role_switching=role_switching,
+    )
     state_dim = UAVEnvironment(env_cfg).reset().shape[0]
-    action_dim = 5
+    checkpoint = torch.load(actor_path, map_location="cpu")
+    output_key = "net.4.weight"
+    action_dim = checkpoint[output_key].shape[0] if output_key in checkpoint else (6 if role_switching else 5)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     actor = Actor(state_dim, action_dim, hidden_dim=128).to(device)
-    actor.load_state_dict(torch.load(actor_path, map_location=device))
+    actor.load_state_dict(checkpoint)
     actor.eval()
 
     rows = []
     for seed in seeds:
-        eval_cfg = EnvConfig(seed=seed, fading_model=channel_model, rician_k=rician_k)
+        eval_cfg = EnvConfig(
+            seed=seed,
+            fading_model=channel_model,
+            rician_k=rician_k,
+            control_mode=control_mode,
+            role_switching=role_switching,
+        )
         env = UAVEnvironment(eval_cfg)
         ddpg = evaluate_ddpg(env, actor, device=device, episodes=episodes_per_seed)
         rnd = evaluate_policy(
@@ -98,6 +114,14 @@ def _parse_args():
         help="Fading model used by the trained environment",
     )
     parser.add_argument("--rician-k", type=float, default=5.0, help="Rician K-factor")
+    parser.add_argument(
+        "--control-mode",
+        type=str,
+        default="velocity",
+        choices=["velocity", "waypoint"],
+        help="Velocity-vector or normalized waypoint control",
+    )
+    parser.add_argument("--role-switching", action="store_true", help="Enable relay/jammer role switching")
     return parser.parse_args()
 
 
@@ -111,6 +135,8 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         channel_model=args.channel_model,
         rician_k=args.rician_k,
+        control_mode=args.control_mode,
+        role_switching=args.role_switching,
     )
 
     agg = result["aggregate"]

@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from environment import EnvConfig, UAVEnvironment
+from Summer_Internship_2026.environment import EnvConfig, UAVEnvironment
 from baselines import distance_greedy_policy, evaluate_policy, random_policy
 from dqn_train import QNetwork, evaluate_dqn, make_action_table
 
@@ -17,12 +17,13 @@ def evaluate_dqn_multi_seed(
     output_dir: str = "outputs/dqn_eval",
     channel_model: str = "rician",
     rician_k: float = 5.0,
+    control_mode: str = "velocity",
 ) -> dict:
     if seeds is None:
         seeds = [7, 21, 42, 84, 168]
 
     action_table = make_action_table()
-    env_cfg = EnvConfig(seed=0, fading_model=channel_model, rician_k=rician_k)
+    env_cfg = EnvConfig(seed=0, fading_model=channel_model, rician_k=rician_k, control_mode=control_mode)
     state_dim = UAVEnvironment(env_cfg).reset().shape[0]
     action_dim = len(action_table)
 
@@ -33,7 +34,7 @@ def evaluate_dqn_multi_seed(
 
     rows = []
     for seed in seeds:
-        eval_cfg = EnvConfig(seed=seed, fading_model=channel_model, rician_k=rician_k)
+        eval_cfg = EnvConfig(seed=seed, fading_model=channel_model, rician_k=rician_k, control_mode=control_mode)
         env = UAVEnvironment(eval_cfg)
         dqn = evaluate_dqn(env, q_net, action_table, device=device, episodes=episodes_per_seed)
         rnd = evaluate_policy(
@@ -99,6 +100,13 @@ def _parse_args():
         help="Fading model used by the trained environment",
     )
     parser.add_argument("--rician-k", type=float, default=5.0, help="Rician K-factor")
+    parser.add_argument(
+        "--control-mode",
+        type=str,
+        default="velocity",
+        choices=["velocity", "waypoint"],
+        help="Velocity-vector or normalized waypoint control",
+    )
     return parser.parse_args()
 
 
@@ -112,6 +120,7 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         channel_model=args.channel_model,
         rician_k=args.rician_k,
+        control_mode=args.control_mode,
     )
 
     agg = result["aggregate"]

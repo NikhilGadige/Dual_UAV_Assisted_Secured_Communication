@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from environment import EnvConfig, UAVEnvironment
+from Summer_Internship_2026.environment import EnvConfig, UAVEnvironment
 from baselines import distance_greedy_policy, evaluate_policy, random_policy
 
 
@@ -25,17 +25,29 @@ class DDPGConfig:
     replay_size: int = 50000
     min_replay_size: int = 1000
     hidden_dim: int = 128
+    noise_type: str = "ou"
     noise_std_start: float = 0.25
     noise_std_end: float = 0.05
     noise_decay_steps: int = 50000
+    ou_theta: float = 0.15
+    ou_dt: float = 1.0
     seed: int = 42
     device: str = "cpu"
     fading_model: str = "rician"
     rician_k: float = 5.0
+    evaluation_episodes: int = 20
+    control_mode: str = "velocity"
+    role_switching: bool = False
 
 
 def make_env_config(seed: int, cfg: DDPGConfig) -> EnvConfig:
-    return EnvConfig(seed=seed, fading_model=cfg.fading_model, rician_k=cfg.rician_k)
+    return EnvConfig(
+        seed=seed,
+        fading_model=cfg.fading_model,
+        rician_k=cfg.rician_k,
+        control_mode=cfg.control_mode,
+        role_switching=cfg.role_switching,
+    )
 
 
 class Actor(nn.Module):
@@ -114,6 +126,29 @@ def split_action(action_5d: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
     return action_5d[:2], action_5d[2:4], float(action_5d[4])
 
 
+def split_action_with_role(action: np.ndarray) -> tuple[np.ndarray, np.ndarray, float, bool]:
+    role_switch = bool(action.shape[0] > 5 and action[5] > 0.5)
+    a_relay, a_jammer, jammer_power = split_action(action)
+    return a_relay, a_jammer, jammer_power, role_switch
+
+
+class OUNoise:
+    def __init__(self, size: int, theta: float = 0.15, dt: float = 1.0):
+        self.size = size
+        self.theta = theta
+        self.dt = dt
+        self.state = np.zeros(size, dtype=np.float32)
+
+    def reset(self) -> None:
+        self.state = np.zeros(self.size, dtype=np.float32)
+
+    def sample(self, sigma: float) -> np.ndarray:
+        dx = self.theta * (-self.state) * self.dt
+        dx += sigma * np.sqrt(self.dt) * np.random.normal(size=self.size)
+        self.state = (self.state + dx).astype(np.float32)
+        return self.state.copy()
+
+
 def evaluate_ddpg(
     env: UAVEnvironment,
     actor: Actor,
@@ -133,8 +168,8 @@ def evaluate_ddpg(
             while not done:
                 s_t = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
                 action = actor(s_t).cpu().numpy()[0]
-                a_relay, a_jammer, jammer_power = split_action(action)
-                next_state, _, done, info = env.step(a_relay, a_jammer, jammer_power)
+                a_relay, a_jammer, jammer_power, role_switch = split_action_with_role(action)
+                next_state, _, done, info = env.step(a_relay, a_jammer, jammer_power, role_switch)
                 total_r_sec += info["R_sec"]
                 steps += 1
                 state = next_state.astype(np.float32)
@@ -156,7 +191,7 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/ddpg") 
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
     env = UAVEnvironment(make_env_config(cfg.seed, cfg))
     state_dim = env.reset().shape[0]
-    action_dim = 5
+    action_dim = 6 if cfg.role_switching else 5
 
     actor = Actor(state_dim, action_dim, cfg.hidden_dim).to(device)
     critic = Critic(state_dim, action_dim, cfg.hidden_dim).to(device)
@@ -168,6 +203,7 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/ddpg") 
     actor_opt = optim.Adam(actor.parameters(), lr=cfg.actor_lr)
     critic_opt = optim.Adam(critic.parameters(), lr=cfg.critic_lr)
     replay = ReplayBuffer(cfg.replay_size)
+    ou_noise = OUNoise(action_dim, theta=cfg.ou_theta, dt=cfg.ou_dt)
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -182,25 +218,48 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/ddpg") 
         done = False
         ep_reward = 0.0
         ep_rsec_bps = 0.0
+        ep_rlegit_bps = 0.0
+        ep_reve_bps = 0.0
         ep_energy_j = 0.0
+        ep_jammer_power = 0.0
         ep_steps = 0
+        relay_start = env.relay_position.copy()
+        jammer_start = env.jammer_position.copy()
+        relay_path_m = 0.0
+        jammer_path_m = 0.0
+        role_switch_count = 0
+        ou_noise.reset()
 
         while not done:
+            prev_relay_position = env.relay_position.copy()
+            prev_jammer_position = env.jammer_position.copy()
             noise_std = noise_by_step(global_step, cfg)
             s_t = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
             with torch.no_grad():
                 action = actor(s_t).cpu().numpy()[0]
-            action = np.clip(action + np.random.normal(0.0, noise_std, size=action_dim), -1.0, 1.0)
+            if cfg.noise_type == "ou":
+                exploration_noise = ou_noise.sample(noise_std)
+            elif cfg.noise_type == "gaussian":
+                exploration_noise = np.random.normal(0.0, noise_std, size=action_dim)
+            else:
+                raise ValueError(f"Unsupported noise_type: {cfg.noise_type}")
+            action = np.clip(action + exploration_noise, -1.0, 1.0)
 
-            a_relay, a_jammer, jammer_power = split_action(action)
-            next_state, reward, done, info = env.step(a_relay, a_jammer, jammer_power)
+            a_relay, a_jammer, jammer_power, role_switch = split_action_with_role(action)
+            next_state, reward, done, info = env.step(a_relay, a_jammer, jammer_power, role_switch)
             next_state = next_state.astype(np.float32)
 
             replay.add(state, action, float(reward), next_state, float(done))
             state = next_state
             ep_reward += reward
+            ep_rlegit_bps += info["R_legit"]
+            ep_reve_bps += info["R_eve"]
             ep_rsec_bps += info["R_sec"]
             ep_energy_j += info["total_energy_j"]
+            ep_jammer_power += info["jammer_power"]
+            relay_path_m += float(np.linalg.norm(env.relay_position - prev_relay_position))
+            jammer_path_m += float(np.linalg.norm(env.jammer_position - prev_jammer_position))
+            role_switch_count += int(role_switch)
             ep_steps += 1
             global_step += 1
 
@@ -232,18 +291,43 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/ddpg") 
                 soft_update(critic, target_critic, cfg.tau)
 
         avg_rsec_mbps = (ep_rsec_bps / max(ep_steps, 1)) / 1e6
+        avg_reward_mbps = (ep_reward / max(ep_steps, 1)) / 1e6
         ep_secrecy_mbits = (ep_rsec_bps * env.config.dt) / 1e6
         rolling_rewards.append(avg_rsec_mbps)
+        roll20 = float(np.mean(rolling_rewards[-20:]))
         roll100 = float(np.mean(rolling_rewards[-100:]))
+        convergence_gap_mbps = float(abs(roll20 - roll100))
+        distances = env.compute_distances()
         train_rows.append(
             {
                 "episode": ep,
+                "global_step": global_step,
+                "fading_model": cfg.fading_model,
                 "noise_std": noise_std,
+                "noise_type": cfg.noise_type,
+                "control_mode": cfg.control_mode,
+                "role_switching": cfg.role_switching,
                 "episode_reward_bps_step": float(ep_reward),
+                "avg_reward_mbps": float(avg_reward_mbps),
+                "avg_R_legit_mbps": float((ep_rlegit_bps / max(ep_steps, 1)) / 1e6),
+                "avg_R_eve_mbps": float((ep_reve_bps / max(ep_steps, 1)) / 1e6),
                 "avg_R_sec_mbps": float(avg_rsec_mbps),
                 "episode_secrecy_mbits": float(ep_secrecy_mbits),
                 "avg_energy_j": float(ep_energy_j / max(ep_steps, 1)),
+                "avg_jammer_power_w": float(ep_jammer_power / max(ep_steps, 1)),
+                "steps": ep_steps,
+                "relay_path_m": relay_path_m,
+                "jammer_path_m": jammer_path_m,
+                "relay_displacement_m": float(np.linalg.norm(env.relay_position - relay_start)),
+                "jammer_displacement_m": float(np.linalg.norm(env.jammer_position - jammer_start)),
+                "role_switch_count": role_switch_count,
+                "final_d_UR_m": float(distances["d_UR"]),
+                "final_d_RB_m": float(distances["d_RB"]),
+                "final_d_UE_m": float(distances["d_UE"]),
+                "final_d_JE_m": float(distances["d_JE"]),
+                "rolling20_avg_R_sec_mbps": roll20,
                 "rolling100_avg_R_sec_mbps": roll100,
+                "convergence_gap20_100_mbps": convergence_gap_mbps,
             }
         )
 
@@ -262,18 +346,18 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/ddpg") 
     torch.save(actor.state_dict(), actor_path)
 
     eval_env = UAVEnvironment(make_env_config(cfg.seed + 999, cfg))
-    ddpg_eval = evaluate_ddpg(eval_env, actor, device=device, episodes=20)
+    ddpg_eval = evaluate_ddpg(eval_env, actor, device=device, episodes=cfg.evaluation_episodes)
     random_eval = evaluate_policy(
         "Random Walk",
         random_policy,
-        episodes=20,
+        episodes=cfg.evaluation_episodes,
         seed=cfg.seed + 999,
         env_config=make_env_config(cfg.seed + 999, cfg),
     )
     greedy_eval = evaluate_policy(
         "Distance-Greedy",
         distance_greedy_policy,
-        episodes=20,
+        episodes=cfg.evaluation_episodes,
         seed=cfg.seed + 999,
         env_config=make_env_config(cfg.seed + 999, cfg),
     )
@@ -288,7 +372,7 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/ddpg") 
         "actor_path": str(actor_path.resolve()),
     }
 
-    print("\nFinal comparison (evaluation episodes=20):")
+    print(f"\nFinal comparison (evaluation episodes={cfg.evaluation_episodes}):")
     print(f"  Channel model            : {summary['fading_model']}")
     print(f"  DDPG avg secrecy rate     : {summary['ddpg_mean_avg_rsec_mbps']:.4f} Mbps")
     print(f"  Random avg secrecy rate   : {summary['random_mean_avg_rsec_mbps']:.4f} Mbps")
@@ -312,6 +396,16 @@ def _parse_args():
     parser.add_argument("--rician-k", type=float, default=5.0, help="Rician K-factor")
     parser.add_argument("--output-dir", type=str, default="outputs/ddpg", help="Output directory")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--eval-episodes", type=int, default=20, help="Evaluation episodes after training")
+    parser.add_argument("--noise-type", type=str, default="ou", choices=["ou", "gaussian"], help="Exploration noise")
+    parser.add_argument(
+        "--control-mode",
+        type=str,
+        default="velocity",
+        choices=["velocity", "waypoint"],
+        help="Velocity-vector or normalized waypoint control",
+    )
+    parser.add_argument("--role-switching", action="store_true", help="Enable relay/jammer role switching")
     return parser.parse_args()
 
 
@@ -323,6 +417,10 @@ if __name__ == "__main__":
             seed=args.seed,
             fading_model=args.channel_model,
             rician_k=args.rician_k,
+            evaluation_episodes=args.eval_episodes,
+            noise_type=args.noise_type,
+            control_mode=args.control_mode,
+            role_switching=args.role_switching,
         ),
         output_dir=args.output_dir,
     )

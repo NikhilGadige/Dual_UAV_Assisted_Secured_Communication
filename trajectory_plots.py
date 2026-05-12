@@ -5,9 +5,9 @@ import numpy as np
 import torch
 
 from baselines import distance_greedy_policy, random_policy
-from ddpg_train import Actor, split_action
+from Summer_Internship_2026.ddpg_train import Actor, split_action
 from dqn_train import QNetwork, make_action_table
-from environment import EnvConfig, UAVEnvironment
+from Summer_Internship_2026.environment import EnvConfig, UAVEnvironment
 
 
 def _safe_import_matplotlib():
@@ -17,6 +17,12 @@ def _safe_import_matplotlib():
     import matplotlib.pyplot as plt
 
     return plt
+
+
+def _infer_actor_action_dim(model_path: str) -> int:
+    checkpoint = torch.load(model_path, map_location="cpu")
+    output_key = "net.4.weight"
+    return int(checkpoint[output_key].shape[0]) if output_key in checkpoint else 5
 
 
 def rollout_policy(env: UAVEnvironment, policy_name: str, model_path: str | None = None) -> dict:
@@ -40,7 +46,7 @@ def rollout_policy(env: UAVEnvironment, policy_name: str, model_path: str | None
     elif policy_name == "ddpg":
         state_dim = state.shape[0]
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        actor = Actor(state_dim, 5, hidden_dim=128).to(device)
+        actor = Actor(state_dim, _infer_actor_action_dim(model_path), hidden_dim=128).to(device)
         actor.load_state_dict(torch.load(model_path, map_location=device))
         actor.eval()
 
@@ -60,10 +66,16 @@ def rollout_policy(env: UAVEnvironment, policy_name: str, model_path: str | None
                 s_t = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
                 action = actor(s_t).cpu().numpy()[0]
             a_relay, a_jammer, jammer_power = split_action(action)
+            role_switch = bool(action.shape[0] > 5 and action[5] > 0.5)
         else:
             raise ValueError(f"Unsupported policy: {policy_name}")
 
-        next_state, _, done, info = env.step(a_relay, a_jammer, jammer_power)
+        next_state, _, done, info = env.step(
+            a_relay,
+            a_jammer,
+            jammer_power,
+            role_switch if policy_name == "ddpg" else False,
+        )
         state = next_state.astype(np.float32)
         trace["relay"].append(env.relay_position.copy())
         trace["jammer"].append(env.jammer_position.copy())
@@ -110,6 +122,8 @@ def generate_trajectory_suite(
     fading_model: str = "rician",
     seed: int = 42,
     output_dir: str = "outputs/trajectories",
+    control_mode: str = "velocity",
+    role_switching: bool = False,
 ) -> dict:
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -123,7 +137,14 @@ def generate_trajectory_suite(
 
     outputs = {}
     for method, model_path in methods:
-        env = UAVEnvironment(EnvConfig(seed=seed, fading_model=fading_model))
+        env = UAVEnvironment(
+            EnvConfig(
+                seed=seed,
+                fading_model=fading_model,
+                control_mode=control_mode,
+                role_switching=role_switching,
+            )
+        )
         trace = rollout_policy(env, method, model_path=model_path)
         out_path = out_dir / f"{method}_{fading_model}_trajectory.png"
         outputs[method] = plot_trajectory(trace, method, fading_model, str(out_path))
@@ -143,6 +164,8 @@ def _parse_args():
     )
     parser.add_argument("--seed", type=int, default=42, help="Episode seed")
     parser.add_argument("--output-dir", type=str, default="outputs/trajectories", help="Output directory")
+    parser.add_argument("--control-mode", type=str, default="velocity", choices=["velocity", "waypoint"])
+    parser.add_argument("--role-switching", action="store_true")
     return parser.parse_args()
 
 
@@ -154,6 +177,8 @@ if __name__ == "__main__":
         fading_model=args.channel_model,
         seed=args.seed,
         output_dir=args.output_dir,
+        control_mode=args.control_mode,
+        role_switching=args.role_switching,
     )
     print("Saved trajectory plots:")
     for method, path in outputs.items():

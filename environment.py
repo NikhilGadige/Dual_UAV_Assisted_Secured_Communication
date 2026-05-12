@@ -23,6 +23,9 @@ class EnvConfig:
     beta0: float = 1.0
     fading_model: str = "rician"
     rician_k: float = 5.0
+    control_mode: str = "velocity"
+    waypoint_gain: float = 1.0
+    role_switching: bool = False
     relay_battery_joules: float = 5000.0
     jammer_battery_joules: float = 5000.0
     relay_hover_power_watts: float = 12.0
@@ -45,6 +48,7 @@ class UAVEnvironment:
         self.current_jammer_power = self.config.jammer_power_max
         self.relay_velocity = np.zeros(2, dtype=float)
         self.jammer_velocity = np.zeros(2, dtype=float)
+        self.roles_swapped = False
         self.relay_battery = self.config.relay_battery_joules
         self.jammer_battery = self.config.jammer_battery_joules
 
@@ -66,6 +70,7 @@ class UAVEnvironment:
         self.current_jammer_power = self.config.jammer_power_max
         self.relay_velocity = np.zeros(2, dtype=float)
         self.jammer_velocity = np.zeros(2, dtype=float)
+        self.roles_swapped = False
         self.relay_battery = self.config.relay_battery_joules
         self.jammer_battery = self.config.jammer_battery_joules
         self._generate_fading()
@@ -85,6 +90,19 @@ class UAVEnvironment:
         action_jammer_power = float(np.clip(action_jammer_power, -1.0, 1.0))
         power_span = self.config.jammer_power_max - self.config.jammer_power_min
         return self.config.jammer_power_min + 0.5 * (action_jammer_power + 1.0) * power_span
+
+    def _control_to_velocity_action(self, position: np.ndarray, action: np.ndarray) -> np.ndarray:
+        if self.config.control_mode == "velocity":
+            return np.clip(action, -1.0, 1.0)
+        if self.config.control_mode != "waypoint":
+            raise ValueError(f"Unsupported control_mode: {self.config.control_mode}")
+
+        waypoint_xy = np.clip(action, -1.0, 1.0) * self.half_area
+        desired = waypoint_xy - position[:2]
+        norm = np.linalg.norm(desired)
+        if norm < 1e-12:
+            return np.zeros(2, dtype=float)
+        return np.clip((desired / norm) * self.config.waypoint_gain, -1.0, 1.0)
 
     def _update_velocity(self, velocity: np.ndarray, action: np.ndarray) -> np.ndarray:
         target_velocity = np.clip(action, -1.0, 1.0) * self.config.max_speed
@@ -126,13 +144,18 @@ class UAVEnvironment:
         action_relay: np.ndarray,
         action_jammer: np.ndarray,
         action_jammer_power: float = 1.0,
+        action_role_switch: float | bool = False,
     ) -> Tuple[np.ndarray, float, bool, dict]:
         action_relay = np.clip(action_relay, -1.0, 1.0)
         action_jammer = np.clip(action_jammer, -1.0, 1.0)
+        if self.config.role_switching and bool(action_role_switch):
+            self.roles_swapped = not self.roles_swapped
         self.current_jammer_power = self._scale_jammer_power(action_jammer_power)
 
-        self.relay_velocity = self._update_velocity(self.relay_velocity, action_relay)
-        self.jammer_velocity = self._update_velocity(self.jammer_velocity, action_jammer)
+        relay_velocity_action = self._control_to_velocity_action(self.relay_position, action_relay)
+        jammer_velocity_action = self._control_to_velocity_action(self.jammer_position, action_jammer)
+        self.relay_velocity = self._update_velocity(self.relay_velocity, relay_velocity_action)
+        self.jammer_velocity = self._update_velocity(self.jammer_velocity, jammer_velocity_action)
         delta_relay = np.append(self.relay_velocity * self.config.dt, 0.0)
         delta_jammer = np.append(self.jammer_velocity * self.config.dt, 0.0)
 
@@ -167,6 +190,9 @@ class UAVEnvironment:
                 "relay_battery_j": float(self.relay_battery),
                 "jammer_battery_j": float(self.jammer_battery),
                 "battery_depleted": bool(battery_depleted),
+                "roles_swapped": bool(self.roles_swapped),
+                "effective_relay_label": "jammer_uav" if self.roles_swapped else "relay_uav",
+                "effective_jammer_label": "relay_uav" if self.roles_swapped else "jammer_uav",
             }
         )
 
@@ -220,22 +246,26 @@ class UAVEnvironment:
 
     def compute_all_channel_gains(self) -> dict:
         gains = {}
+        relay_position = self.jammer_position if self.roles_swapped else self.relay_position
+        jammer_position = self.relay_position if self.roles_swapped else self.jammer_position
         gains["h_UR"] = self.compute_channel_gain(
-            self.user_position, self.relay_position, self.fading["UR"])
+            self.user_position, relay_position, self.fading["UR"])
         gains["h_RB"] = self.compute_channel_gain(
-            self.relay_position, self.bs_position, self.fading["RB"])
+            relay_position, self.bs_position, self.fading["RB"])
         gains["h_UE"] = self.compute_channel_gain(
             self.user_position, self.eve_position, self.fading["UE"])
         gains["h_JE"] = self.compute_channel_gain(
-            self.jammer_position, self.eve_position, self.fading["JE"])
+            jammer_position, self.eve_position, self.fading["JE"])
         return gains
 
     def compute_distances(self) -> dict:
+        relay_position = self.jammer_position if self.roles_swapped else self.relay_position
+        jammer_position = self.relay_position if self.roles_swapped else self.jammer_position
         return {
-            "d_UR": compute_distance(self.user_position, self.relay_position),
-            "d_RB": compute_distance(self.relay_position, self.bs_position),
+            "d_UR": compute_distance(self.user_position, relay_position),
+            "d_RB": compute_distance(relay_position, self.bs_position),
             "d_UE": compute_distance(self.user_position, self.eve_position),
-            "d_JE": compute_distance(self.jammer_position, self.eve_position),
+            "d_JE": compute_distance(jammer_position, self.eve_position),
         }
 
     def print_channel_gains(self, gains: dict | None = None) -> None:

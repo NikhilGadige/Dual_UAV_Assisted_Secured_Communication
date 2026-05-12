@@ -2,14 +2,16 @@ import argparse
 import csv
 from pathlib import Path
 
-from ddpg_train import DDPGConfig, train_ddpg
+from Summer_Internship_2026.ddpg_train import DDPGConfig, train_ddpg
 from dqn_train import DQNConfig, train_dqn
 
 
 def run_rl_channel_matrix(
     episodes: int = 60,
+    eval_episodes: int = 20,
     seed: int = 42,
     output_dir: str = "outputs/rl_channel_matrix",
+    control_mode: str = "velocity",
 ) -> dict:
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -36,6 +38,8 @@ def run_rl_channel_matrix(
                     batch_size=batch_size,
                     seed=seed,
                     fading_model=fading_model,
+                    evaluation_episodes=eval_episodes,
+                    control_mode=control_mode,
                 ),
                 output_dir=str(run_dir),
             )
@@ -59,6 +63,8 @@ def run_rl_channel_matrix(
                     batch_size=batch_size,
                     seed=seed,
                     fading_model=fading_model,
+                    evaluation_episodes=eval_episodes,
+                    control_mode=control_mode,
                 ),
                 output_dir=str(run_dir),
             )
@@ -97,7 +103,15 @@ def _parse_args():
         description="Run DQN and DDPG under both Rician and Rayleigh fading."
     )
     parser.add_argument("--episodes", type=int, default=60, help="Episodes per run")
+    parser.add_argument("--eval-episodes", type=int, default=20, help="Evaluation episodes after each run")
     parser.add_argument("--seed", type=int, default=42, help="Shared random seed")
+    parser.add_argument(
+        "--control-mode",
+        type=str,
+        default="velocity",
+        choices=["velocity", "waypoint"],
+        help="Velocity-vector or normalized waypoint control",
+    )
     parser.add_argument(
         "--output-dir",
         type=str,
@@ -109,4 +123,10 @@ def _parse_args():
 
 if __name__ == "__main__":
     args = _parse_args()
-    run_rl_channel_matrix(episodes=args.episodes, seed=args.seed, output_dir=args.output_dir)
+    run_rl_channel_matrix(
+        episodes=args.episodes,
+        eval_episodes=args.eval_episodes,
+        seed=args.seed,
+        output_dir=args.output_dir,
+        control_mode=args.control_mode,
+    )

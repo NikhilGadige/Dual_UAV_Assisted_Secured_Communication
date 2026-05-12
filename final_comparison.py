@@ -3,9 +3,9 @@ import csv
 from pathlib import Path
 
 from baselines import distance_greedy_policy, evaluate_policy, random_policy
-from ddpg_evaluate import evaluate_ddpg_multi_seed
-from dqn_evaluate import evaluate_dqn_multi_seed
-from environment import EnvConfig
+from Summer_Internship_2026.ddpg_evaluate import evaluate_ddpg_multi_seed
+from Summer_Internship_2026.dqn_evaluate import evaluate_dqn_multi_seed
+from Summer_Internship_2026.environment import EnvConfig
 
 
 def _safe_import_matplotlib():
@@ -51,6 +51,7 @@ def run_final_comparison(
     episodes_per_seed: int = 20,
     seeds: list[int] | None = None,
     output_dir: str = "outputs/final_comparison",
+    control_mode: str = "velocity",
 ) -> dict:
     if seeds is None:
         seeds = [7, 21, 42, 84, 168]
@@ -60,7 +61,7 @@ def run_final_comparison(
 
     rows: list[dict] = []
     for fading_model in ["rician", "rayleigh"]:
-        env_cfg = EnvConfig(fading_model=fading_model)
+        env_cfg = EnvConfig(fading_model=fading_model, control_mode=control_mode)
 
         random_summary = _aggregate_baseline(
             "Random Walk",
@@ -83,6 +84,7 @@ def run_final_comparison(
             seeds=seeds,
             output_dir=str(out_dir / f"dqn_{fading_model}_eval"),
             channel_model=fading_model,
+            control_mode=control_mode,
         )["aggregate"]
 
         ddpg_result = evaluate_ddpg_multi_seed(
@@ -91,6 +93,7 @@ def run_final_comparison(
             seeds=seeds,
             output_dir=str(out_dir / f"ddpg_{fading_model}_eval"),
             channel_model=fading_model,
+            control_mode=control_mode,
         )["aggregate"]
 
         rows.extend(
@@ -201,6 +204,13 @@ def _parse_args():
     parser.add_argument("--episodes", type=int, default=20, help="Episodes per seed")
     parser.add_argument("--seeds", type=str, default="7,21,42,84,168", help="Comma-separated seeds")
     parser.add_argument("--output-dir", type=str, default="outputs/final_comparison", help="Output directory")
+    parser.add_argument(
+        "--control-mode",
+        type=str,
+        default="velocity",
+        choices=["velocity", "waypoint"],
+        help="Velocity-vector or normalized waypoint control",
+    )
     return parser.parse_args()
 
 
@@ -215,6 +225,7 @@ if __name__ == "__main__":
         episodes_per_seed=args.episodes,
         seeds=seeds,
         output_dir=args.output_dir,
+        control_mode=args.control_mode,
     )
 
     print("Final comparison complete:")
