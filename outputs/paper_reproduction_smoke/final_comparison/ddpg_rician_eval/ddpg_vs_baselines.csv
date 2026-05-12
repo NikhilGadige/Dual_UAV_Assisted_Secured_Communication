@@ -1,0 +1,2 @@
+seed,fading_model,ddpg_avg_rsec_mbps,ddpg_episode_secrecy_mbits,random_avg_rsec_mbps,greedy_avg_rsec_mbps
+7,rician,0.0,0.0,5.565309426262736,7.352896365621748

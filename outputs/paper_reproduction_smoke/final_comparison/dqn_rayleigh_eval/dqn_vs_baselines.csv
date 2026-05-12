@@ -1,0 +1,2 @@
+seed,fading_model,dqn_avg_rsec_mbps,dqn_episode_secrecy_mbits,random_avg_rsec_mbps,greedy_avg_rsec_mbps
+7,rayleigh,5.76045572351076,115.2091144702152,4.84777867065652,6.755867536962314
