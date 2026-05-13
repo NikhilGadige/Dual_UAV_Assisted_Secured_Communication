@@ -10,10 +10,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from environment import EnvConfig, UAVEnvironment
-from config_utils import build_env_config
-from baselines import distance_greedy_policy, evaluate_policy, random_policy
-from marl_utils import (
+from core.environment import EnvConfig, UAVEnvironment
+from core.config_utils import build_env_config
+from analysis.baselines import distance_greedy_policy, evaluate_policy, random_policy
+from rl.marl_utils import (
     relay_observation,
     jammer_observation,
     relay_obs_dim,
@@ -183,7 +183,7 @@ def evaluate_marl_dqn(
 
 def train_marl_dqn(
     cfg: MarlDQNConfig | None = None,
-    output_dir: str = "outputs/marl_dqn",
+    output_dir: str = "outputs/training/marl_shared",
 ) -> dict:
     cfg = cfg or MarlDQNConfig()
     set_seed(cfg.seed)
@@ -489,7 +489,7 @@ def _parse_args():
     parser.add_argument("--episodes", type=int, default=400)
     parser.add_argument("--channel-model", type=str, default="rician", choices=["rician", "rayleigh"])
     parser.add_argument("--rician-k", type=float, default=5.0)
-    parser.add_argument("--output-dir", type=str, default="outputs/marl_dqn")
+    parser.add_argument("--output-dir", type=str, default="outputs/training/marl_shared")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--eval-episodes", type=int, default=20)
     parser.add_argument("--control-mode", type=str, default="velocity", choices=["velocity", "waypoint"])

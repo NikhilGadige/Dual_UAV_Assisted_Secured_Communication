@@ -2,15 +2,15 @@ import argparse
 import csv
 from pathlib import Path
 
-from ddpg_train import DDPGConfig, train_ddpg
-from dqn_train import DQNConfig, train_dqn
+from rl.ddpg_train import DDPGConfig, train_ddpg
+from rl.dqn_train import DQNConfig, train_dqn
 
 
 def run_rl_channel_matrix(
     episodes: int = 60,
     eval_episodes: int = 20,
     seed: int = 42,
-    output_dir: str = "outputs/rl_channel_matrix",
+    output_dir: str = "outputs/evaluations/channel_matrix",
     control_mode: str = "velocity",
     user_mobile: bool = False,
     use_los_model: bool = False,
@@ -139,7 +139,7 @@ def _parse_args():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="outputs/rl_channel_matrix",
+        default="outputs/evaluations/channel_matrix",
         help="Directory to store all run outputs",
     )
     parser.add_argument("--user-mobile", action="store_true", help="Enable mobile user")

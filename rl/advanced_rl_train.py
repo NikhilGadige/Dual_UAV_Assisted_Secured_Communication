@@ -10,8 +10,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from environment import EnvConfig, UAVEnvironment
-from config_utils import build_env_config
+from core.environment import EnvConfig, UAVEnvironment
+from core.config_utils import build_env_config
 
 
 def set_seed(seed: int) -> None:
@@ -212,7 +212,7 @@ def write_log(rows: list[dict], path: Path) -> None:
         writer.writerows(rows)
 
 
-def train_td3(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/td3") -> dict:
+def train_td3(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/training/td3") -> dict:
     cfg = cfg or AdvancedRLConfig()
     set_seed(cfg.seed)
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
@@ -291,7 +291,7 @@ def train_td3(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/td
     return _save_advanced("td3", actor, rows, cfg, output_dir, lambda s: actor(s))
 
 
-def train_sac(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/sac") -> dict:
+def train_sac(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/training/sac") -> dict:
     cfg = cfg or AdvancedRLConfig()
     set_seed(cfg.seed)
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
@@ -361,7 +361,7 @@ def train_sac(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/sa
     return _save_advanced("sac", actor, rows, cfg, output_dir, lambda s: actor.deterministic(s))
 
 
-def train_ppo(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/ppo") -> dict:
+def train_ppo(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/training/ppo") -> dict:
     cfg = cfg or AdvancedRLConfig()
     set_seed(cfg.seed)
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
@@ -474,6 +474,8 @@ def _row(
         "enable_ntn": cfg.enable_ntn,
         "satellite_altitude_km": cfg.satellite_altitude_km,
         "episode_reward_bps_step": float(ep_reward),
+        # "avg_shaped_reward": float((ep_reward / max(steps, 1)) / 1e6),
+        # "avg_shaped_reward": float(ep_reward / max(ep_steps, 1)),
         "avg_shaped_reward": float(ep_reward / max(steps, 1)),
         "avg_R_sec_mbps": float((ep_rsec / max(steps, 1)) / 1e6),
         "episode_secrecy_mbits": float((ep_rsec * 0.1) / 1e6),
@@ -538,7 +540,7 @@ def _parse_args():
     parser.add_argument("--ntn-carrier-frequency-hz", type=float, default=2e9, help="NTN carrier frequency (Hz)")
     parser.add_argument("--ntn-atmospheric-loss-db", type=float, default=0.5, help="NTN atmospheric loss (dB)")
     parser.add_argument("--ntn-rician-k-db", type=float, default=10.0, help="NTN Rician K-factor (dB)")
-    parser.add_argument("--output-dir", type=str, default="outputs/advanced_rl")
+    parser.add_argument("--output-dir", type=str, default="outputs/training")
     return parser.parse_args()
 
 

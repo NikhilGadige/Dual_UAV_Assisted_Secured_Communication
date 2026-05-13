@@ -5,20 +5,21 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from environment import EnvConfig, UAVEnvironment
-from config_utils import build_env_config
-from baselines import distance_greedy_policy, evaluate_policy, random_policy
-from dqn_train import QNetwork, evaluate_dqn, make_action_table
+from analysis.baselines import distance_greedy_policy, evaluate_policy, random_policy
+from core.config_utils import build_env_config
+from rl.ddpg_train import Actor, evaluate_ddpg
+from core.environment import EnvConfig, UAVEnvironment
 
 
-def evaluate_dqn_multi_seed(
-    model_path: str,
+def evaluate_ddpg_multi_seed(
+    actor_path: str,
     episodes_per_seed: int = 20,
     seeds: list[int] | None = None,
-    output_dir: str = "outputs/dqn_eval",
+    output_dir: str = "outputs/evaluations/ddpg",
     channel_model: str = "rician",
     rician_k: float = 5.0,
     control_mode: str = "velocity",
+    role_switching: bool = False,
     user_mobile: bool = False,
     use_los_model: bool = False,
     observation_mode: str = "full",
@@ -27,21 +28,42 @@ def evaluate_dqn_multi_seed(
     if seeds is None:
         seeds = [7, 21, 42, 84, 168]
 
-    action_table = make_action_table()
-    env_cfg = build_env_config(seed=0, fading_model=channel_model, rician_k=rician_k, control_mode=control_mode, user_mobile=user_mobile, use_los_model=use_los_model, observation_mode=observation_mode, normalize_observations=normalize_observations)
+    env_cfg = build_env_config(
+        seed=0,
+        fading_model=channel_model,
+        rician_k=rician_k,
+        control_mode=control_mode,
+        role_switching=role_switching,
+        user_mobile=user_mobile,
+        use_los_model=use_los_model,
+        observation_mode=observation_mode,
+        normalize_observations=normalize_observations,
+    )
     state_dim = UAVEnvironment(env_cfg).reset().shape[0]
-    action_dim = len(action_table)
+    checkpoint = torch.load(actor_path, map_location="cpu")
+    output_key = "net.4.weight"
+    action_dim = checkpoint[output_key].shape[0] if output_key in checkpoint else (6 if role_switching else 5)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    q_net = QNetwork(state_dim, action_dim, hidden_dim=128).to(device)
-    q_net.load_state_dict(torch.load(model_path, map_location=device))
-    q_net.eval()
+    actor = Actor(state_dim, action_dim, hidden_dim=128).to(device)
+    actor.load_state_dict(checkpoint)
+    actor.eval()
 
     rows = []
     for seed in seeds:
-        eval_cfg = build_env_config(seed=seed, fading_model=channel_model, rician_k=rician_k, control_mode=control_mode, user_mobile=user_mobile, use_los_model=use_los_model, observation_mode=observation_mode, normalize_observations=normalize_observations)
+        eval_cfg = build_env_config(
+            seed=seed,
+            fading_model=channel_model,
+            rician_k=rician_k,
+            control_mode=control_mode,
+            role_switching=role_switching,
+            user_mobile=user_mobile,
+            use_los_model=use_los_model,
+            observation_mode=observation_mode,
+            normalize_observations=normalize_observations,
+        )
         env = UAVEnvironment(eval_cfg)
-        dqn = evaluate_dqn(env, q_net, action_table, device=device, episodes=episodes_per_seed)
+        ddpg = evaluate_ddpg(env, actor, device=device, episodes=episodes_per_seed)
         rnd = evaluate_policy(
             "Random Walk",
             random_policy,
@@ -67,8 +89,8 @@ def evaluate_dqn_multi_seed(
                 "normalize_observations": normalize_observations,
                 "enable_energy_harvesting": False,
                 "observation_has_eh": observation_mode == "full_eh",
-                "dqn_avg_rsec_mbps": dqn["mean_avg_rsec_mbps"],
-                "dqn_episode_secrecy_mbits": dqn["mean_episode_secrecy_mbits"],
+                "ddpg_avg_rsec_mbps": ddpg["mean_avg_rsec_mbps"],
+                "ddpg_episode_secrecy_mbits": ddpg["mean_episode_secrecy_mbits"],
                 "random_avg_rsec_mbps": rnd["mean_avg_R_sec_mbps"],
                 "greedy_avg_rsec_mbps": grd["mean_avg_R_sec_mbps"],
             }
@@ -76,7 +98,7 @@ def evaluate_dqn_multi_seed(
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_csv = out_dir / "dqn_vs_baselines.csv"
+    out_csv = out_dir / "ddpg_vs_baselines.csv"
     with out_csv.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()
@@ -84,25 +106,25 @@ def evaluate_dqn_multi_seed(
 
     agg = {
         "fading_model": channel_model,
-        "dqn_avg_rsec_mbps": float(np.mean([r["dqn_avg_rsec_mbps"] for r in rows])),
+        "ddpg_avg_rsec_mbps": float(np.mean([r["ddpg_avg_rsec_mbps"] for r in rows])),
         "random_avg_rsec_mbps": float(np.mean([r["random_avg_rsec_mbps"] for r in rows])),
         "greedy_avg_rsec_mbps": float(np.mean([r["greedy_avg_rsec_mbps"] for r in rows])),
-        "dqn_episode_secrecy_mbits": float(np.mean([r["dqn_episode_secrecy_mbits"] for r in rows])),
+        "ddpg_episode_secrecy_mbits": float(np.mean([r["ddpg_episode_secrecy_mbits"] for r in rows])),
     }
     return {"csv_path": str(out_csv.resolve()), "aggregate": agg}
 
 
 def _parse_args():
-    parser = argparse.ArgumentParser(description="Evaluate trained DQN against baselines.")
+    parser = argparse.ArgumentParser(description="Evaluate trained DDPG against baselines.")
     parser.add_argument(
-        "--model-path",
+        "--actor-path",
         type=str,
-        default="outputs/dqn_smoke/dqn_qnet.pt",
-        help="Path to trained DQN model (.pt)",
+        default="outputs/training/ddpg/ddpg_actor.pt",
+        help="Path to trained DDPG actor (.pt)",
     )
     parser.add_argument("--episodes", type=int, default=20, help="Episodes per seed")
     parser.add_argument("--seeds", type=str, default="7,21,42,84,168", help="Comma-separated seeds")
-    parser.add_argument("--output-dir", type=str, default="outputs/dqn_eval", help="Output directory")
+    parser.add_argument("--output-dir", type=str, default="outputs/evaluations/ddpg", help="Output directory")
     parser.add_argument(
         "--channel-model",
         type=str,
@@ -118,6 +140,7 @@ def _parse_args():
         choices=["velocity", "waypoint"],
         help="Velocity-vector or normalized waypoint control",
     )
+    parser.add_argument("--role-switching", action="store_true", help="Enable relay/jammer role switching")
     parser.add_argument("--user-mobile", action="store_true", help="Enable mobile user")
     parser.add_argument("--use-los-model", action="store_true", help="Use LoS path-loss model")
     parser.add_argument(
@@ -134,14 +157,15 @@ def _parse_args():
 if __name__ == "__main__":
     args = _parse_args()
     seeds = [int(s.strip()) for s in args.seeds.split(",") if s.strip()]
-    result = evaluate_dqn_multi_seed(
-        model_path=args.model_path,
+    result = evaluate_ddpg_multi_seed(
+        actor_path=args.actor_path,
         episodes_per_seed=args.episodes,
         seeds=seeds,
         output_dir=args.output_dir,
         channel_model=args.channel_model,
         rician_k=args.rician_k,
         control_mode=args.control_mode,
+        role_switching=args.role_switching,
         user_mobile=args.user_mobile,
         use_los_model=args.use_los_model,
         observation_mode=args.observation_mode,
@@ -151,8 +175,8 @@ if __name__ == "__main__":
     agg = result["aggregate"]
     print("Evaluation complete:")
     print(f"  Channel model          : {agg['fading_model']}")
-    print(f"  DQN avg secrecy rate    : {agg['dqn_avg_rsec_mbps']:.4f} Mbps")
+    print(f"  DDPG avg secrecy rate   : {agg['ddpg_avg_rsec_mbps']:.4f} Mbps")
     print(f"  Random avg secrecy rate : {agg['random_avg_rsec_mbps']:.4f} Mbps")
     print(f"  Greedy avg secrecy rate : {agg['greedy_avg_rsec_mbps']:.4f} Mbps")
-    print(f"  DQN secrecy payload/ep  : {agg['dqn_episode_secrecy_mbits']:.4f} Mbits")
+    print(f"  DDPG secrecy payload/ep : {agg['ddpg_episode_secrecy_mbits']:.4f} Mbits")
     print(f"  CSV saved at            : {result['csv_path']}")

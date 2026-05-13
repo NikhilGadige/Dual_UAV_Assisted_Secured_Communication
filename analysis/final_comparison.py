@@ -2,11 +2,11 @@ import argparse
 import csv
 from pathlib import Path
 
-from baselines import distance_greedy_policy, evaluate_policy, random_policy
-from config_utils import build_env_config
-from ddpg_evaluate import evaluate_ddpg_multi_seed
-from dqn_evaluate import evaluate_dqn_multi_seed
-from environment import EnvConfig
+from analysis.baselines import distance_greedy_policy, evaluate_policy, random_policy
+from core.config_utils import build_env_config
+from rl.ddpg_evaluate import evaluate_ddpg_multi_seed
+from rl.dqn_evaluate import evaluate_dqn_multi_seed
+from core.environment import EnvConfig
 
 
 def _safe_import_matplotlib():
@@ -51,7 +51,7 @@ def run_final_comparison(
     ddpg_rayleigh_actor: str,
     episodes_per_seed: int = 20,
     seeds: list[int] | None = None,
-    output_dir: str = "outputs/final_comparison",
+    output_dir: str = "outputs/comparisons",
     control_mode: str = "velocity",
     user_mobile: bool = False,
     use_los_model: bool = False,
@@ -221,7 +221,7 @@ def _parse_args():
     parser.add_argument("--ddpg-rayleigh-actor", type=str, required=True, help="Path to Rayleigh DDPG actor")
     parser.add_argument("--episodes", type=int, default=20, help="Episodes per seed")
     parser.add_argument("--seeds", type=str, default="7,21,42,84,168", help="Comma-separated seeds")
-    parser.add_argument("--output-dir", type=str, default="outputs/final_comparison", help="Output directory")
+    parser.add_argument("--output-dir", type=str, default="outputs/comparisons", help="Output directory")
     parser.add_argument(
         "--control-mode",
         type=str,

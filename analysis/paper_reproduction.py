@@ -2,16 +2,16 @@ import argparse
 import csv
 from pathlib import Path
 
-from advanced_rl_train import AdvancedRLConfig, train_advanced
-from baselines import distance_greedy_policy, evaluate_policy, random_policy
-from config_utils import build_env_config
-from ddpg_analysis import plot_ddpg_training_curves
-from dqn_analysis import plot_dqn_training_curves
-from environment import EnvConfig
-from final_comparison import run_final_comparison
-from paper_plots import plot_final_paper_comparisons, plot_training_comparison
-from rl_channel_experiments import run_rl_channel_matrix
-from trajectory_plots import generate_trajectory_suite
+from rl.advanced_rl_train import AdvancedRLConfig, train_advanced
+from analysis.baselines import distance_greedy_policy, evaluate_policy, random_policy
+from core.config_utils import build_env_config
+from analysis.ddpg_analysis import plot_ddpg_training_curves
+from analysis.dqn_analysis import plot_dqn_training_curves
+from core.environment import EnvConfig
+from analysis.final_comparison import run_final_comparison
+from analysis.paper_plots import plot_final_paper_comparisons, plot_training_comparison
+from analysis.rl_channel_experiments import run_rl_channel_matrix
+from analysis.trajectory_plots import generate_trajectory_suite
 
 
 def _parse_seed_list(raw: str) -> list[int]:
@@ -77,7 +77,7 @@ def run_paper_reproduction(
     eval_episodes: int = 10,
     seeds: list[int] | None = None,
     train_seed: int = 42,
-    output_dir: str = "outputs/paper_reproduction",
+    output_dir: str = "outputs/manifests",
     make_trajectories: bool = True,
     control_mode: str = "velocity",
     include_advanced: bool = False,
@@ -94,6 +94,7 @@ def run_paper_reproduction(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("\n[1/6] Running baselines for Rician and Rayleigh...")
+    # baseline_csv = _write_baseline_channel_table(out_dir, eval_episodes, seeds)
     baseline_csv = _write_baseline_channel_table(
         out_dir,
         eval_episodes,
@@ -267,7 +268,7 @@ def _parse_args():
     parser.add_argument("--eval-episodes", type=int, default=10, help="Evaluation episodes per seed")
     parser.add_argument("--seeds", type=str, default="7,21,42", help="Comma-separated evaluation seeds")
     parser.add_argument("--train-seed", type=int, default=42, help="Shared training seed")
-    parser.add_argument("--output-dir", type=str, default="outputs/paper_reproduction", help="Output directory")
+    parser.add_argument("--output-dir", type=str, default="outputs/manifests", help="Output directory")
     parser.add_argument("--skip-trajectories", action="store_true", help="Skip rollout trajectory plots")
     parser.add_argument(
         "--control-mode",

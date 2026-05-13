@@ -1,8 +1,8 @@
 import numpy as np
 from dataclasses import replace
 
-from environment import EnvConfig, UAVEnvironment
-from config_utils import build_env_config
+from core.environment import EnvConfig, UAVEnvironment
+from core.config_utils import build_env_config
 
 BPS_TO_MBPS = 1e-6
 BITS_TO_MBITS = 1e-6
@@ -24,6 +24,7 @@ def random_policy(env: UAVEnvironment) -> tuple[np.ndarray, np.ndarray, float]:
 
 
 def distance_greedy_policy(env: UAVEnvironment) -> tuple[np.ndarray, np.ndarray, float]:
+    # Relay targets midpoint between user and BS to balance two-hop quality.
     relay_target_xy = 0.5 * (env.user_position[:2] + env.bs_position[:2])
     jammer_target_xy = env.eve_position[:2]
 
@@ -68,6 +69,7 @@ def run_episode(env: UAVEnvironment, policy_fn) -> dict:
         "avg_R_eve_bps": float(total_r_eve / max(steps, 1)),
         "avg_R_sec_bps": float(total_r_sec / max(steps, 1)),
         "avg_energy_j": float(total_energy_j / max(steps, 1)),
+        # "avg_shaped_reward": float((total_reward / max(steps, 1)) * BPS_TO_MBPS),
         "avg_shaped_reward": float(total_reward / max(steps, 1)),
         "avg_R_legit_mbps": float((total_r_legit / max(steps, 1)) * BPS_TO_MBPS),
         "avg_R_eve_mbps": float((total_r_eve / max(steps, 1)) * BPS_TO_MBPS),

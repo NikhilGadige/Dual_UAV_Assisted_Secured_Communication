@@ -1,6 +1,6 @@
 import numpy as np
 
-from observation_schema import (
+from core.observation_schema import (
     GEOM_END, DIST_END, CHAN_END, BATT_END, EH_END, NTN_END,
     OFF_H_UR, OFF_H_RB, OFF_H_UE, OFF_H_JE,
     OFF_GAMMA_UR, OFF_GAMMA_RB, OFF_GAMMA_E,

@@ -174,6 +174,7 @@ def normalize_observation(
 
     return out
 
+
 def build_observation(
     mode: str,
     relay_position: np.ndarray,

@@ -27,6 +27,10 @@ def _float(row: dict, key: str, default: float = 0.0) -> float:
 
 
 def plot_training_comparison(log_specs: list[dict], output_dir: str) -> dict:
+    """Plot cross-agent/channel learning curves from training CSV logs.
+
+    Each spec must include: algorithm, fading_model, csv_path.
+    """
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     plt = _safe_import_matplotlib()

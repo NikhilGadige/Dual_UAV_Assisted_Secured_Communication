@@ -158,13 +158,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--csv-path",
         type=str,
-        default=str(Path(__file__).resolve().parent / "outputs" / "ddpg_smoke" / "ddpg_training_log.csv"),
+        default=str(Path(__file__).resolve().parent.parent / "outputs" / "training" / "ddpg" / "ddpg_training_log.csv"),
         help="Path to ddpg_training_log.csv",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
-        default=None,
+        default="outputs/plots",
         help="Directory to save plots (default: same as CSV directory)",
     )
     args = parser.parse_args()

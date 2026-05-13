@@ -4,11 +4,11 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from baselines import distance_greedy_policy, random_policy
-from config_utils import build_env_config
-from ddpg_train import Actor, split_action
-from dqn_train import QNetwork, make_action_table
-from environment import EnvConfig, UAVEnvironment
+from analysis.baselines import distance_greedy_policy, random_policy
+from core.config_utils import build_env_config
+from rl.ddpg_train import Actor, split_action
+from rl.dqn_train import QNetwork, make_action_table
+from core.environment import EnvConfig, UAVEnvironment
 
 
 def _safe_import_matplotlib():

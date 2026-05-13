@@ -1,4 +1,4 @@
-from environment import EnvConfig
+from core.environment import EnvConfig
 
 def build_env_config(
     seed: int | None = None,
