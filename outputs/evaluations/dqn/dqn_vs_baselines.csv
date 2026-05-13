@@ -1,0 +1,6 @@
+seed,fading_model,user_mobile,use_los_model,observation_mode,normalize_observations,enable_energy_harvesting,observation_has_eh,dqn_avg_rsec_mbps,dqn_episode_secrecy_mbits,random_avg_rsec_mbps,greedy_avg_rsec_mbps
+7,rician,False,False,full,True,False,False,0.0,0.0,7.302503448531707,8.672063341624257
+21,rician,False,False,full,True,False,False,7.77138822527458e-05,0.001554277645054916,7.314362957712371,8.491663886455516
+42,rician,False,False,full,True,False,False,0.0,0.0,6.235317962787695,8.349995465322348
+84,rician,False,False,full,True,False,False,0.0,0.0,7.29574286073575,8.47476686493229
+168,rician,False,False,full,True,False,False,0.0,0.0,6.671283149230402,8.775047903987659

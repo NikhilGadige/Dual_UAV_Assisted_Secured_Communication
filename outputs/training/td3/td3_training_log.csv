@@ -1,0 +1,3 @@
+algorithm,episode,global_step,fading_model,control_mode,role_switching,user_mobile,use_los_model,observation_mode,normalize_observations,enable_energy_harvesting,observation_has_eh,enable_ntn,satellite_altitude_km,episode_reward_bps_step,avg_shaped_reward,avg_R_sec_mbps,episode_secrecy_mbits,steps,rolling20_avg_R_sec_mbps,rolling100_avg_R_sec_mbps,convergence_gap20_100_mbps
+TD3,1,200,rician,velocity,False,False,False,full,True,False,False,False,500.0,1209.6770997773644,6.048385498886822,6.390961502813528,127.81923005627056,200,6.390961502813528,6.390961502813528,0.0
+TD3,2,400,rician,velocity,False,False,False,full,True,False,False,False,500.0,729.65970238181,3.64829851190905,3.985163289736852,79.70326579473704,200,5.18806239627519,5.18806239627519,0.0

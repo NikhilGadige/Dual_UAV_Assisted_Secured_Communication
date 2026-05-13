@@ -1,3 +1,0 @@
-algorithm,fading_model,mean_avg_rsec_mbps,mean_episode_secrecy_mbits,training_log_csv,model_path
-td3,rician,0.0,0.0,D:\Divyanshu\Summer_Internship_2026\outputs\paper_reproduction_additions_5_8_smoke\advanced_rl\td3_rician\td3_training_log.csv,D:\Divyanshu\Summer_Internship_2026\outputs\paper_reproduction_additions_5_8_smoke\advanced_rl\td3_rician\td3_actor.pt
-td3,rayleigh,0.0051699071760747005,0.103398143521494,D:\Divyanshu\Summer_Internship_2026\outputs\paper_reproduction_additions_5_8_smoke\advanced_rl\td3_rayleigh\td3_training_log.csv,D:\Divyanshu\Summer_Internship_2026\outputs\paper_reproduction_additions_5_8_smoke\advanced_rl\td3_rayleigh\td3_actor.pt

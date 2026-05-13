@@ -1,0 +1,3 @@
+algorithm,episode,global_step,fading_model,control_mode,role_switching,user_mobile,use_los_model,observation_mode,normalize_observations,enable_energy_harvesting,observation_has_eh,enable_ntn,satellite_altitude_km,episode_reward_bps_step,avg_shaped_reward,avg_R_sec_mbps,episode_secrecy_mbits,steps,rolling20_avg_R_sec_mbps,rolling100_avg_R_sec_mbps,convergence_gap20_100_mbps
+SAC,1,200,rician,velocity,False,False,False,full,True,False,False,False,500.0,1223.5515757374055,6.117757878687027,6.429851411508727,128.59702823017454,200,6.429851411508727,6.429851411508727,0.0
+SAC,2,400,rician,velocity,False,False,False,full,True,False,False,False,500.0,933.9577327710281,4.66978866385514,6.04572863190444,120.91457263808881,200,6.237790021706584,6.237790021706584,0.0

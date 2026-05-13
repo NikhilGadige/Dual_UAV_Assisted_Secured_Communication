@@ -516,12 +516,13 @@ def _save_advanced(
 
 def train_advanced(method: str, cfg: AdvancedRLConfig, output_dir: str) -> dict:
     method = method.lower()
+    method_dir = str(Path(output_dir) / method)
     if method == "td3":
-        return train_td3(cfg, output_dir)
+        return train_td3(cfg, method_dir)
     if method == "sac":
-        return train_sac(cfg, output_dir)
+        return train_sac(cfg, method_dir)
     if method == "ppo":
-        return train_ppo(cfg, output_dir)
+        return train_ppo(cfg, method_dir)
     raise ValueError(f"Unsupported advanced method: {method}")
 
 

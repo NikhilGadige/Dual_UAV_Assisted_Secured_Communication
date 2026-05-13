@@ -183,9 +183,11 @@ def evaluate_marl_dqn(
 
 def train_marl_dqn(
     cfg: MarlDQNConfig | None = None,
-    output_dir: str = "outputs/training/marl_shared",
+    output_dir: str | None = None,
 ) -> dict:
     cfg = cfg or MarlDQNConfig()
+    if output_dir is None:
+        output_dir = f"outputs/training/marl_{cfg.agent_obs_mode}"
     set_seed(cfg.seed)
 
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
@@ -489,7 +491,8 @@ def _parse_args():
     parser.add_argument("--episodes", type=int, default=400)
     parser.add_argument("--channel-model", type=str, default="rician", choices=["rician", "rayleigh"])
     parser.add_argument("--rician-k", type=float, default=5.0)
-    parser.add_argument("--output-dir", type=str, default="outputs/training/marl_shared")
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="Output directory (default: auto-derived from agent-obs-mode)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--eval-episodes", type=int, default=20)
     parser.add_argument("--control-mode", type=str, default="velocity", choices=["velocity", "waypoint"])
@@ -506,6 +509,9 @@ def _parse_args():
 
 if __name__ == "__main__":
     args = _parse_args()
+    output_dir = args.output_dir
+    if output_dir is None:
+        output_dir = f"outputs/training/marl_{args.agent_obs_mode}"
     train_marl_dqn(
         MarlDQNConfig(
             episodes=args.episodes,
@@ -523,5 +529,5 @@ if __name__ == "__main__":
             ntn_atmospheric_loss_db=args.ntn_atmospheric_loss_db,
             ntn_rician_k_db=args.ntn_rician_k_db,
         ),
-        output_dir=args.output_dir,
+        output_dir=output_dir,
     )

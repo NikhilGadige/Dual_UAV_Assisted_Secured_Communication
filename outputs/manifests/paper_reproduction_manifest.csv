@@ -1,0 +1,16 @@
+artifact,path
+baseline_csv,D:\dual_uav_summer\outputs\manifests\baseline_channel_summary.csv
+rl_matrix_csv,D:\dual_uav_summer\outputs\manifests\rl_channel_matrix\rl_channel_matrix_summary.csv
+final_csv,D:\dual_uav_summer\outputs\manifests\final_comparison\comparison_summary.csv
+final_plots.avg_rsec_plot,D:\dual_uav_summer\outputs\manifests\final_comparison\secrecy_rate_barplot.png
+final_plots.episode_mbits_plot,D:\dual_uav_summer\outputs\manifests\final_comparison\secrecy_payload_barplot.png
+final_plots.method_ranking_plot,D:\dual_uav_summer\outputs\manifests\final_comparison\method_ranking.png
+paper_training_plots.secrecy_reward_vs_episodes,D:\dual_uav_summer\outputs\manifests\paper_plots\paper_secrecy_reward_vs_episodes.png
+paper_training_plots.secrecy_rate_vs_episodes,D:\dual_uav_summer\outputs\manifests\paper_plots\paper_secrecy_rate_vs_episodes.png
+paper_training_plots.convergence_gap_vs_episodes,D:\dual_uav_summer\outputs\manifests\paper_plots\paper_convergence_gap_vs_episodes.png
+paper_training_plots.trajectory_path_length_vs_episodes,D:\dual_uav_summer\outputs\manifests\paper_plots\paper_trajectory_path_length_vs_episodes.png
+paper_final_plots.dqn_ddpg_baselines_avg_rsec,D:\dual_uav_summer\outputs\manifests\paper_plots\paper_dqn_ddpg_baselines_avg_rsec.png
+paper_final_plots.rician_vs_rayleigh_avg_rsec,D:\dual_uav_summer\outputs\manifests\paper_plots\paper_rician_vs_rayleigh_avg_rsec.png
+paper_final_plots.final_secrecy_payload,D:\dual_uav_summer\outputs\manifests\paper_plots\paper_final_secrecy_payload.png
+trajectory.rician.dqn,D:\dual_uav_summer\outputs\manifests\trajectories\rician\dqn\dqn_trajectory_rician.png
+trajectory.rayleigh.dqn,D:\dual_uav_summer\outputs\manifests\trajectories\rayleigh\dqn\dqn_trajectory_rayleigh.png

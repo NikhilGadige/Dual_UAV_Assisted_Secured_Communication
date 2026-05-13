@@ -89,7 +89,7 @@ class UAVEnvironment:
         self.current_jammer_power = self.config.jammer_power_max
         self.relay_velocity = np.zeros(2, dtype=float)
         self.jammer_velocity = np.zeros(2, dtype=float)
-        self.user_velocity = np.zeros(2, dtype=float)  
+        self.user_velocity = np.zeros(2, dtype=float)  # (Requirement 3)
         self._prev_relay_velocity = np.zeros(2, dtype=float)
         self._prev_jammer_velocity = np.zeros(2, dtype=float)
         self.roles_swapped = False
@@ -820,7 +820,7 @@ if __name__ == "__main__":
     print()
 
     print("=" * 70)
-    print("STATE DIMENSION VERIFICATION")
+    print("STATE DIMENSION VERIFICATION  (Requirement 13)")
     print("=" * 70)
     for mode in ["geometry", "channels", "full", "full_eh", "full_ntn"]:
         cfg_noeh = EnvConfig(seed=42, observation_mode=mode, enable_energy_harvesting=False)
