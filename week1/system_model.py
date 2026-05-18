@@ -23,8 +23,8 @@ from rl.dqn_train import DQNConfig
 
 CHANNEL_MODELS: tuple[str, ...] = ("rician", "rayleigh")
 ALGORITHMS: tuple[str, ...] = ("dqn", "ddpg")
-DEFAULT_TRAIN_EPISODES = 600
-DEFAULT_EVAL_EPISODES = 20
+DEFAULT_TRAIN_EPISODES = 4000
+DEFAULT_EVAL_EPISODES = 140
 DEFAULT_EVAL_SEEDS: tuple[int, ...] = (7, 21, 42)
 
 
@@ -35,7 +35,7 @@ class Week1Scenario:
     train_episodes: int = DEFAULT_TRAIN_EPISODES
     eval_episodes: int = DEFAULT_EVAL_EPISODES
     seed: int = 42
-    hidden_dim: int = 128
+    hidden_dim: int = 32
     control_mode: str = "velocity"
     observation_mode: str = "full"
     normalize_observations: bool = True
