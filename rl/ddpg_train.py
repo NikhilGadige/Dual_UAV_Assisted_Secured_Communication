@@ -37,6 +37,8 @@ class DDPGConfig:
     fading_model: str = "rician"
     rician_k: float = 5.0
     evaluation_episodes: int = 20
+    eval_interval: int = 0
+    train_eval_episodes: int = 5
     control_mode: str = "velocity"
     role_switching: bool = False
     user_mobile: bool = False
@@ -234,6 +236,7 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/trainin
     global_step = 0
     rolling_rewards: list[float] = []
     train_rows: list[dict] = []
+    last_eval_rsec_mbps: float | str = ""
 
     for ep in range(1, cfg.episodes + 1):
         state = env.reset().astype(np.float32)
@@ -320,6 +323,12 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/trainin
         roll20 = float(np.mean(rolling_rewards[-20:]))
         roll100 = float(np.mean(rolling_rewards[-100:]))
         convergence_gap_mbps = float(abs(roll20 - roll100))
+        eval_r_sec_mbps: float | str = ""
+        if cfg.eval_interval > 0 and ep % cfg.eval_interval == 0:
+            eval_env = UAVEnvironment(make_env_config(cfg.seed + 5000 + ep, cfg))
+            eval_summary = evaluate_ddpg(eval_env, actor, device=device, episodes=cfg.train_eval_episodes)
+            last_eval_rsec_mbps = eval_summary["mean_avg_rsec_mbps"]
+            eval_r_sec_mbps = last_eval_rsec_mbps
         distances = env.compute_distances()
         train_rows.append(
             {
@@ -338,11 +347,14 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/trainin
                 "observation_has_eh": cfg.observation_mode == "full_eh",
                 "enable_ntn": env.config.enable_ntn,
                 "satellite_altitude_km": env.config.satellite_altitude_km,
+                "hidden_dim": cfg.hidden_dim,
                 "episode_reward_bps_step": float(ep_reward),
                 "avg_shaped_reward": float(avg_shaped_reward),
                 "avg_R_legit_mbps": float((ep_rlegit_bps / max(ep_steps, 1)) / 1e6),
                 "avg_R_eve_mbps": float((ep_reve_bps / max(ep_steps, 1)) / 1e6),
                 "avg_R_sec_mbps": float(avg_rsec_mbps),
+                "eval_R_sec_mbps": eval_r_sec_mbps,
+                "last_eval_R_sec_mbps": last_eval_rsec_mbps,
                 "episode_secrecy_mbits": float(ep_secrecy_mbits),
                 "avg_energy_j": float(ep_energy_j / max(ep_steps, 1)),
                 "avg_jammer_power_w": float(ep_jammer_power / max(ep_steps, 1)),
@@ -356,8 +368,11 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/trainin
                 "final_d_RB_m": float(distances["d_RB"]),
                 "final_d_UE_m": float(distances["d_UE"]),
                 "final_d_JE_m": float(distances["d_JE"]),
+                "rolling20": roll20,
                 "rolling20_avg_R_sec_mbps": roll20,
+                "rolling100": roll100,
                 "rolling100_avg_R_sec_mbps": roll100,
+                "convergence_gap": convergence_gap_mbps,
                 "convergence_gap20_100_mbps": convergence_gap_mbps,
             }
         )

@@ -24,15 +24,20 @@ class DQNConfig:
     replay_size: int = 50000
     min_replay_size: int = 1000
     target_update_freq: int = 200
+    target_update_tau: float = 0.005
     epsilon_start: float = 1.0
     epsilon_end: float = 0.05
     epsilon_decay_steps: int = 40000
+    grad_clip_norm: float = 5.0
+    td_target_clip: float = 20.0
     hidden_dim: int = 128
     seed: int = 42
     device: str = "cpu"
     fading_model: str = "rician"
     rician_k: float = 5.0
     evaluation_episodes: int = 20
+    eval_interval: int = 0
+    train_eval_episodes: int = 5
     control_mode: str = "velocity"
     user_mobile: bool = False
     use_los_model: bool = False
@@ -146,6 +151,11 @@ def epsilon_by_step(step: int, cfg: DQNConfig) -> float:
     return cfg.epsilon_start - span * frac
 
 
+def soft_update(src: nn.Module, dst: nn.Module, tau: float) -> None:
+    for p_src, p_dst in zip(src.parameters(), dst.parameters()):
+        p_dst.data.copy_(tau * p_src.data + (1.0 - tau) * p_dst.data)
+
+
 def evaluate_dqn(
     env: UAVEnvironment,
     q_net: QNetwork,
@@ -210,6 +220,7 @@ def train_dqn(
     global_step = 0
     rolling_rewards: list[float] = []
     train_rows: list[dict] = []
+    last_eval_rsec_mbps: float | str = ""
 
     for ep in range(1, cfg.episodes + 1):
         state = env.reset().astype(np.float32)
@@ -264,16 +275,17 @@ def train_dqn(
 
                 q_pred = q_net(s_t).gather(1, a_t)
                 with torch.no_grad():
-                    q_next = target_net(ns_t).max(dim=1, keepdim=True)[0]
+                    online_next_actions = q_net(ns_t).argmax(dim=1, keepdim=True)
+                    q_next = target_net(ns_t).gather(1, online_next_actions)
                     q_target = r_t + (1.0 - d_t) * cfg.gamma * q_next
+                    q_target = torch.clamp(q_target, -cfg.td_target_clip, cfg.td_target_clip)
 
                 loss = nn.MSELoss()(q_pred, q_target)
                 optimizer.zero_grad()
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(q_net.parameters(), cfg.grad_clip_norm)
                 optimizer.step()
-
-                if global_step % cfg.target_update_freq == 0:
-                    target_net.load_state_dict(q_net.state_dict())
+                soft_update(q_net, target_net, cfg.target_update_tau)
 
         avg_rsec_mbps = (ep_rsec_bps / max(ep_steps, 1)) / 1e6
         # avg_shaped_reward = (ep_reward / max(ep_steps, 1)) / 1e6
@@ -283,6 +295,18 @@ def train_dqn(
         roll20 = float(np.mean(rolling_rewards[-20:]))
         roll100 = float(np.mean(rolling_rewards[-100:]))
         convergence_gap_mbps = float(abs(roll20 - roll100))
+        eval_r_sec_mbps: float | str = ""
+        if cfg.eval_interval > 0 and ep % cfg.eval_interval == 0:
+            eval_env = UAVEnvironment(make_env_config(cfg.seed + 5000 + ep, cfg))
+            eval_summary = evaluate_dqn(
+                eval_env,
+                q_net,
+                action_table,
+                device=device,
+                episodes=cfg.train_eval_episodes,
+            )
+            last_eval_rsec_mbps = eval_summary["mean_avg_rsec_mbps"]
+            eval_r_sec_mbps = last_eval_rsec_mbps
         distances = env.compute_distances()
         train_rows.append(
             {
@@ -298,12 +322,16 @@ def train_dqn(
                 "observation_has_eh": cfg.observation_mode == "full_eh",
                 "enable_ntn": env.config.enable_ntn,
                 "satellite_altitude_km": env.config.satellite_altitude_km,
+                "hidden_dim": cfg.hidden_dim,
                 "epsilon": eps,
+                "target_tau": cfg.target_update_tau,
                 "episode_reward_bps_step": float(ep_reward),
                 "avg_shaped_reward": float(avg_shaped_reward),
                 "avg_R_legit_mbps": float((ep_rlegit_bps / max(ep_steps, 1)) / 1e6),
                 "avg_R_eve_mbps": float((ep_reve_bps / max(ep_steps, 1)) / 1e6),
                 "avg_R_sec_mbps": float(avg_rsec_mbps),
+                "eval_R_sec_mbps": eval_r_sec_mbps,
+                "last_eval_R_sec_mbps": last_eval_rsec_mbps,
                 "episode_secrecy_mbits": float(ep_secrecy_mbits),
                 "avg_energy_j": float(ep_energy_j / max(ep_steps, 1)),
                 "avg_jammer_power_w": float(ep_jammer_power / max(ep_steps, 1)),
@@ -316,8 +344,11 @@ def train_dqn(
                 "final_d_RB_m": float(distances["d_RB"]),
                 "final_d_UE_m": float(distances["d_UE"]),
                 "final_d_JE_m": float(distances["d_JE"]),
+                "rolling20": roll20,
                 "rolling20_avg_R_sec_mbps": roll20,
+                "rolling100": roll100,
                 "rolling100_avg_R_sec_mbps": roll100,
+                "convergence_gap": convergence_gap_mbps,
                 "convergence_gap20_100_mbps": convergence_gap_mbps,
             }
         )
