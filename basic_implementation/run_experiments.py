@@ -14,7 +14,7 @@ from basic_implementation.run_common import run_basic_experiment
 def run_all_experiments(
     episodes: int = 4000,
     hidden_dim: int = 32,
-    learning_rate: float = 5e-4,
+    learning_rate: float = 1e-2,
     seed: int = 42,
     device: str = "cpu",
     output_root: str = "outputs/basic_outputs",
@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--episodes", type=int, default=4000, help="Training episodes per run. Use 4000 or 4500.")
     parser.add_argument("--hidden-dim", type=int, default=32, help="Hidden dimension for DQN/DDPG.")
-    parser.add_argument("--learning-rate", type=float, default=5e-4, help="Learning rate for DQN/DDPG.")
+    parser.add_argument("--learning-rate", type=float, default=1e-2, help="Learning rate for DQN/DDPG.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument("--device", type=str, default="cpu", help="Torch device.")
     parser.add_argument(

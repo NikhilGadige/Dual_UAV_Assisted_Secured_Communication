@@ -20,7 +20,7 @@ def run_basic_experiment(
     seed: int,
     device: str,
     hidden_dim: int = 32,
-    learning_rate: float = 5e-4,
+    learning_rate: float = 1e-2,
     output_root: str = "outputs/basic_outputs",
 ) -> dict:
     basic_cfg = BasicExperimentConfig(

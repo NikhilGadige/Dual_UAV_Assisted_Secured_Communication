@@ -12,7 +12,7 @@ from convergence_study.configs import (
 class BasicExperimentConfig:
     episodes: int = 4000
     hidden_dim: int = 32
-    learning_rate: float = 5e-4
+    learning_rate: float = 1e-2
     seed: int = 42
     device: str = "cpu"
     output_root: str = "outputs/basic_outputs"
@@ -24,7 +24,7 @@ def build_basic_dqn_config(
     fading_model: str,
     episodes: int = 4000,
     hidden_dim: int = 32,
-    learning_rate: float = 5e-4,
+    learning_rate: float = 1e-2,
     seed: int = 42,
     device: str = "cpu",
 ):
@@ -44,7 +44,7 @@ def build_basic_ddpg_config(
     fading_model: str,
     episodes: int = 4000,
     hidden_dim: int = 32,
-    learning_rate: float = 5e-4,
+    learning_rate: float = 1e-2,
     seed: int = 42,
     device: str = "cpu",
 ):
