@@ -172,8 +172,9 @@ def train_ppo(cfg: PPOConfig, output_dir: str) -> dict:
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    log_path = out_dir / "ppo_training_log.csv"
-    actor_path = out_dir / "ppo_actor.pt"
+    (out_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
+    log_path = out_dir / "training_log.csv"
+    actor_path = out_dir / "checkpoints" / "actor.pt"
 
     global_step = 0
     rolling = []
@@ -189,6 +190,10 @@ def train_ppo(cfg: PPOConfig, output_dir: str) -> dict:
         ep_rsec = 0.0
         ep_rlegit = 0.0
         ep_reve = 0.0
+        ep_num_eves = 0
+        ep_nearest_eve_dist = 0.0
+        ep_mean_eve_dist = 0.0
+        ep_max_eve_cap = 0.0
         steps = 0
 
         while not done:
@@ -212,6 +217,10 @@ def train_ppo(cfg: PPOConfig, output_dir: str) -> dict:
             ep_rsec += info["R_sec"]
             ep_rlegit += info["R_legit"]
             ep_reve += info["R_eve"]
+            ep_num_eves += info.get("num_eves", 1)
+            ep_nearest_eve_dist += info.get("nearest_eve_distance", 0.0)
+            ep_mean_eve_dist += info.get("mean_eve_distance", 0.0)
+            ep_max_eve_cap += info.get("max_eve_capacity", 0.0)
             steps += 1
             global_step += 1
 
@@ -283,6 +292,10 @@ def train_ppo(cfg: PPOConfig, output_dir: str) -> dict:
                 "avg_R_legit_mbps": float((ep_rlegit / max(steps, 1)) / 1e6),
                 "avg_R_eve_mbps": float((ep_reve / max(steps, 1)) / 1e6),
                 "avg_R_sec_mbps": float(avg_rsec_mbps),
+                "avg_num_eves": float(ep_num_eves / max(steps, 1)),
+                "avg_nearest_eve_distance": float(ep_nearest_eve_dist / max(steps, 1)),
+                "avg_mean_eve_distance": float(ep_mean_eve_dist / max(steps, 1)),
+                "avg_max_eve_capacity": float((ep_max_eve_cap / max(steps, 1)) / 1e6),
                 "eval_R_sec_mbps": eval_rsec,
                 "last_eval_R_sec_mbps": last_eval,
                 "steps": steps,
@@ -307,6 +320,11 @@ def train_ppo(cfg: PPOConfig, output_dir: str) -> dict:
         writer.writerows(rows)
 
     torch.save(actor.state_dict(), actor_path)
+
+    plots_dir = out_dir / "plots"
+    from PPO_study.plot_ppo import generate_single_run_plots as ppo_plots
+    ppo_plots(str(log_path), str(plots_dir), f"PPO + {cfg.fading_model.title()}", "#ff7f0e")
+
     return {
         "training_log_csv": str(log_path.resolve()),
         "model_path": str(actor_path.resolve()),

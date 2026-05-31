@@ -46,7 +46,7 @@ def rollout_policy(
         "relay": [env.relay_position.copy()],
         "jammer": [env.jammer_position.copy()],
         "user": [env.user_position.copy()],
-        "eve": env.eve_position.copy(),
+        "eve": env.eve_positions.copy() if hasattr(env, "eve_positions") and env.eve_positions.size > 0 else np.array([env.eve_position[:2]]),
         "bs": env.bs_position.copy(),
         "total_r_sec": 0.0,
     }
@@ -156,14 +156,25 @@ def plot_trajectory(trace: dict, policy_name: str, fading_model: str, output_pat
     ax.plot(jammer[:, 0], jammer[:, 1], label="Jammer UAV", color="#d62728", linewidth=2)
     ax.plot(user[:, 0], user[:, 1], label="User path", color="#2ca02c", linewidth=1.5, alpha=0.7)
     ax.scatter(user[0, 0], user[0, 1], color="#2ca02c", s=60, marker="o", zorder=5)
-    ax.scatter(eve[0], eve[1], label="Eavesdropper", color="#ff7f0e", s=80, marker="X")
     ax.scatter(bs[0], bs[1], label="Base Station", color="#111111", s=90, marker="s")
     ax.scatter(relay[0, 0], relay[0, 1], color="#1f77b4", s=40, marker="^")
     ax.scatter(jammer[0, 0], jammer[0, 1], color="#d62728", s=40, marker="^")
 
+    # Handle multiple Eves (HPPP) vs single Eve
+    if isinstance(eve, np.ndarray) and eve.ndim == 2 and eve.shape[0] > 1:
+        # Multiple eavesdroppers (HPPP mode)
+        ax.scatter(eve[:, 0], eve[:, 1], label="Eavesdroppers", color="#ff7f0e", s=20, marker=".", alpha=0.7)
+        ax.set_title("Multiple-Eavesdropper HPPP Scenario")
+    else:
+        eves = eve  # handle both (3,) and (1,2) etc
+        if eve.ndim == 1:
+            eves = eve.reshape(1, -1)
+        ax.scatter(eves[:, 0], eves[:, 1], label="Eavesdropper", color="#ff7f0e", s=80, marker="X")
+
     ax.set_xlabel("X Position (m)")
     ax.set_ylabel("Y Position (m)")
-    ax.set_title(f"{policy_name.upper()} Trajectory | {fading_model.capitalize()} fading")
+    if not ax.get_title():
+        ax.set_title(f"{policy_name.upper()} Trajectory | {fading_model.capitalize()} fading")
     ax.legend()
     ax.grid(alpha=0.25)
     fig.tight_layout()

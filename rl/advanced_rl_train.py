@@ -239,7 +239,11 @@ def train_td3(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/tr
     for ep in range(1, cfg.episodes + 1):
         state = env.reset().astype(np.float32)
         done = False
-        ep_reward = ep_rsec = 0.0
+        ep_reward = ep_rsec = ep_rlegit = ep_reve = 0.0
+        ep_num_eves = 0
+        ep_nearest_eve_dist = 0.0
+        ep_mean_eve_dist = 0.0
+        ep_max_eve_cap = 0.0
         steps = 0
         while not done:
             with torch.no_grad():
@@ -252,6 +256,12 @@ def train_td3(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/tr
             state = next_state.astype(np.float32)
             ep_reward += reward
             ep_rsec += info["R_sec"]
+            ep_rlegit += info["R_legit"]
+            ep_reve += info["R_eve"]
+            ep_num_eves += info.get("num_eves", 1)
+            ep_nearest_eve_dist += info.get("nearest_eve_distance", 0.0)
+            ep_mean_eve_dist += info.get("mean_eve_distance", 0.0)
+            ep_max_eve_cap += info.get("max_eve_capacity", 0.0)
             steps += 1
             global_step += 1
 
@@ -286,7 +296,8 @@ def train_td3(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/tr
 
         avg_rsec = (ep_rsec / max(steps, 1)) / 1e6
         rolling.append(avg_rsec)
-        rows.append(_row("TD3", cfg, ep, global_step, ep_reward, ep_rsec, steps, rolling))
+        rows.append(_row("TD3", cfg, ep, global_step, ep_reward, ep_rsec, ep_rlegit, ep_reve, steps, rolling,
+                         ep_num_eves, ep_nearest_eve_dist, ep_mean_eve_dist, ep_max_eve_cap))
 
     return _save_advanced("td3", actor, rows, cfg, output_dir, lambda s: actor(s))
 
@@ -316,7 +327,11 @@ def train_sac(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/tr
     for ep in range(1, cfg.episodes + 1):
         state = env.reset().astype(np.float32)
         done = False
-        ep_reward = ep_rsec = 0.0
+        ep_reward = ep_rsec = ep_rlegit = ep_reve = 0.0
+        ep_num_eves = 0
+        ep_nearest_eve_dist = 0.0
+        ep_mean_eve_dist = 0.0
+        ep_max_eve_cap = 0.0
         steps = 0
         while not done:
             with torch.no_grad():
@@ -328,6 +343,12 @@ def train_sac(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/tr
             state = next_state.astype(np.float32)
             ep_reward += reward
             ep_rsec += info["R_sec"]
+            ep_rlegit += info["R_legit"]
+            ep_reve += info["R_eve"]
+            ep_num_eves += info.get("num_eves", 1)
+            ep_nearest_eve_dist += info.get("nearest_eve_distance", 0.0)
+            ep_mean_eve_dist += info.get("mean_eve_distance", 0.0)
+            ep_max_eve_cap += info.get("max_eve_capacity", 0.0)
             steps += 1
             global_step += 1
 
@@ -356,7 +377,8 @@ def train_sac(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/tr
 
         avg_rsec = (ep_rsec / max(steps, 1)) / 1e6
         rolling.append(avg_rsec)
-        rows.append(_row("SAC", cfg, ep, global_step, ep_reward, ep_rsec, steps, rolling))
+        rows.append(_row("SAC", cfg, ep, global_step, ep_reward, ep_rsec, ep_rlegit, ep_reve, steps, rolling,
+                         ep_num_eves, ep_nearest_eve_dist, ep_mean_eve_dist, ep_max_eve_cap))
 
     return _save_advanced("sac", actor, rows, cfg, output_dir, lambda s: actor.deterministic(s))
 
@@ -389,7 +411,11 @@ def train_ppo(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/tr
         rewards = []
         state = env.reset().astype(np.float32)
         done = False
-        ep_reward = ep_rsec = 0.0
+        ep_reward = ep_rsec = ep_rlegit = ep_reve = 0.0
+        ep_num_eves = 0
+        ep_nearest_eve_dist = 0.0
+        ep_mean_eve_dist = 0.0
+        ep_max_eve_cap = 0.0
         steps = 0
         while not done:
             s_t = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
@@ -405,6 +431,12 @@ def train_ppo(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/tr
             state = next_state.astype(np.float32)
             ep_reward += reward
             ep_rsec += info["R_sec"]
+            ep_rlegit += info["R_legit"]
+            ep_reve += info["R_eve"]
+            ep_num_eves += info.get("num_eves", 1)
+            ep_nearest_eve_dist += info.get("nearest_eve_distance", 0.0)
+            ep_mean_eve_dist += info.get("mean_eve_distance", 0.0)
+            ep_max_eve_cap += info.get("max_eve_capacity", 0.0)
             steps += 1
             global_step += 1
 
@@ -441,7 +473,8 @@ def train_ppo(cfg: AdvancedRLConfig | None = None, output_dir: str = "outputs/tr
 
         avg_rsec = (ep_rsec / max(steps, 1)) / 1e6
         rolling.append(avg_rsec)
-        rows.append(_row("PPO", cfg, ep, global_step, ep_reward, ep_rsec, steps, rolling))
+        rows.append(_row("PPO", cfg, ep, global_step, ep_reward, ep_rsec, ep_rlegit, ep_reve, steps, rolling,
+                         ep_num_eves, ep_nearest_eve_dist, ep_mean_eve_dist, ep_max_eve_cap))
 
     return _save_advanced("ppo", actor, rows, cfg, output_dir, lambda s: actor.deterministic(s))
 
@@ -453,8 +486,14 @@ def _row(
     global_step: int,
     ep_reward: float,
     ep_rsec: float,
+    ep_rlegit: float,
+    ep_reve: float,
     steps: int,
     rolling: list[float],
+    ep_num_eves: int = 0,
+    ep_nearest_eve_dist: float = 0.0,
+    ep_mean_eve_dist: float = 0.0,
+    ep_max_eve_cap: float = 0.0,
 ) -> dict:
     roll20 = float(np.mean(rolling[-20:]))
     roll100 = float(np.mean(rolling[-100:]))
@@ -474,10 +513,14 @@ def _row(
         "enable_ntn": cfg.enable_ntn,
         "satellite_altitude_km": cfg.satellite_altitude_km,
         "episode_reward_bps_step": float(ep_reward),
-        # "avg_shaped_reward": float((ep_reward / max(steps, 1)) / 1e6),
-        # "avg_shaped_reward": float(ep_reward / max(ep_steps, 1)),
         "avg_shaped_reward": float(ep_reward / max(steps, 1)),
+        "avg_R_legit_mbps": float((ep_rlegit / max(steps, 1)) / 1e6),
+        "avg_R_eve_mbps": float((ep_reve / max(steps, 1)) / 1e6),
         "avg_R_sec_mbps": float((ep_rsec / max(steps, 1)) / 1e6),
+        "avg_num_eves": float(ep_num_eves / max(steps, 1)),
+        "avg_nearest_eve_distance": float(ep_nearest_eve_dist / max(steps, 1)),
+        "avg_mean_eve_distance": float(ep_mean_eve_dist / max(steps, 1)),
+        "avg_max_eve_capacity": float((ep_max_eve_cap / max(steps, 1)) / 1e6),
         "episode_secrecy_mbits": float((ep_rsec * 0.1) / 1e6),
         "steps": steps,
         "rolling20_avg_R_sec_mbps": roll20,

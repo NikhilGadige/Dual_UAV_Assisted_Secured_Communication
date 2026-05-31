@@ -248,6 +248,10 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/trainin
         ep_energy_j = 0.0
         ep_jammer_power = 0.0
         ep_steps = 0
+        ep_num_eves = 0
+        ep_nearest_eve_dist = 0.0
+        ep_mean_eve_dist = 0.0
+        ep_max_eve_cap = 0.0
         relay_start = env.relay_position.copy()
         jammer_start = env.jammer_position.copy()
         relay_path_m = 0.0
@@ -282,6 +286,10 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/trainin
             ep_rsec_bps += info["R_sec"]
             ep_energy_j += info["total_energy_j"]
             ep_jammer_power += info["jammer_power"]
+            ep_num_eves += info.get("num_eves", 1)
+            ep_nearest_eve_dist += info.get("nearest_eve_distance", 0.0)
+            ep_mean_eve_dist += info.get("mean_eve_distance", 0.0)
+            ep_max_eve_cap += info.get("max_eve_capacity", 0.0)
             relay_path_m += float(np.linalg.norm(env.relay_position - prev_relay_position))
             jammer_path_m += float(np.linalg.norm(env.jammer_position - prev_jammer_position))
             role_switch_count += int(role_switch)
@@ -353,6 +361,10 @@ def train_ddpg(cfg: DDPGConfig | None = None, output_dir: str = "outputs/trainin
                 "avg_R_legit_mbps": float((ep_rlegit_bps / max(ep_steps, 1)) / 1e6),
                 "avg_R_eve_mbps": float((ep_reve_bps / max(ep_steps, 1)) / 1e6),
                 "avg_R_sec_mbps": float(avg_rsec_mbps),
+                "avg_num_eves": float(ep_num_eves / max(ep_steps, 1)),
+                "avg_nearest_eve_distance": float(ep_nearest_eve_dist / max(ep_steps, 1)),
+                "avg_mean_eve_distance": float(ep_mean_eve_dist / max(ep_steps, 1)),
+                "avg_max_eve_capacity": float((ep_max_eve_cap / max(ep_steps, 1)) / 1e6),
                 "eval_R_sec_mbps": eval_r_sec_mbps,
                 "last_eval_R_sec_mbps": last_eval_rsec_mbps,
                 "episode_secrecy_mbits": float(ep_secrecy_mbits),

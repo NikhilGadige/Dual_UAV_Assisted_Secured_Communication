@@ -196,8 +196,9 @@ def train_d3qn(cfg: D3QNConfig, output_dir: str) -> dict:
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    log_path = out_dir / "d3qn_training_log.csv"
-    model_path = out_dir / "d3qn_qnet.pt"
+    (out_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
+    log_path = out_dir / "training_log.csv"
+    model_path = out_dir / "checkpoints" / "qnet.pt"
 
     global_step = 0
     rolling_rewards = []
@@ -212,6 +213,10 @@ def train_d3qn(cfg: D3QNConfig, output_dir: str) -> dict:
         ep_rlegit_bps = 0.0
         ep_reve_bps = 0.0
         ep_steps = 0
+        ep_num_eves = 0
+        ep_nearest_eve_dist = 0.0
+        ep_mean_eve_dist = 0.0
+        ep_max_eve_cap = 0.0
 
         while not done:
             eps = epsilon_by_step(global_step, cfg)
@@ -232,6 +237,10 @@ def train_d3qn(cfg: D3QNConfig, output_dir: str) -> dict:
             ep_rlegit_bps += info["R_legit"]
             ep_reve_bps += info["R_eve"]
             ep_rsec_bps += info["R_sec"]
+            ep_num_eves += info.get("num_eves", 1)
+            ep_nearest_eve_dist += info.get("nearest_eve_distance", 0.0)
+            ep_mean_eve_dist += info.get("mean_eve_distance", 0.0)
+            ep_max_eve_cap += info.get("max_eve_capacity", 0.0)
             ep_steps += 1
             global_step += 1
 
@@ -283,6 +292,10 @@ def train_d3qn(cfg: D3QNConfig, output_dir: str) -> dict:
                 "avg_R_legit_mbps": float((ep_rlegit_bps / max(ep_steps, 1)) / 1e6),
                 "avg_R_eve_mbps": float((ep_reve_bps / max(ep_steps, 1)) / 1e6),
                 "avg_R_sec_mbps": float(avg_rsec_mbps),
+                "avg_num_eves": float(ep_num_eves / max(ep_steps, 1)),
+                "avg_nearest_eve_distance": float(ep_nearest_eve_dist / max(ep_steps, 1)),
+                "avg_mean_eve_distance": float(ep_mean_eve_dist / max(ep_steps, 1)),
+                "avg_max_eve_capacity": float((ep_max_eve_cap / max(ep_steps, 1)) / 1e6),
                 "eval_R_sec_mbps": eval_rsec,
                 "last_eval_R_sec_mbps": last_eval,
                 "steps": ep_steps,
@@ -307,6 +320,11 @@ def train_d3qn(cfg: D3QNConfig, output_dir: str) -> dict:
         writer.writerows(rows)
 
     torch.save(q_net.state_dict(), model_path)
+
+    plots_dir = out_dir / "plots"
+    from d3qn_study.plot_d3qn import generate_single_run_plots as d3qn_plots
+    d3qn_plots(str(log_path), str(plots_dir), f"D3QN + {cfg.fading_model.title()}", "#1f77b4")
+
     return {
         "training_log_csv": str(log_path.resolve()),
         "model_path": str(model_path.resolve()),

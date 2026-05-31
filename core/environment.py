@@ -56,6 +56,13 @@ class EnvConfig:
     user_mobile: bool = False
     user_max_speed: float = 3.0
     user_motion_model: str = "random_walk"
+    # --- Multiple Eve (HPPP) configuration (Phase 1–4) ---
+    use_multiple_eves: bool = True
+    eve_density_lambda: float = 2e-5
+    eve_region_xmin: float = 0.0
+    eve_region_xmax: float = 1000.0
+    eve_region_ymin: float = 0.0
+    eve_region_ymax: float = 1000.0
     # --- Observation / state representation ---
     observation_mode: str = "full"
     normalize_observations: bool = True
@@ -106,6 +113,12 @@ class UAVEnvironment:
         self.satellite_position = np.array([off_m, off_m, alt_m], dtype=float)
         self.ntn_fading_sat_relay = 1.0
         self.h_sat_relay = 0.0
+        # Multi-Eve (HPPP) state
+        self.eve_positions = np.empty((0, 2), dtype=float)
+        self.num_eves = 1
+        self.nearest_eve_distance = 0.0
+        self.mean_eve_distance = 0.0
+        self.max_eve_capacity = 0.0
 
     def _random_position_2d(self) -> np.ndarray:
         return np.array([
@@ -113,11 +126,34 @@ class UAVEnvironment:
             np.random.uniform(-self.half_area, self.half_area),
         ])
 
+    def _generate_hppp_eves(self) -> np.ndarray:
+        area = ((self.config.eve_region_xmax - self.config.eve_region_xmin) *
+                (self.config.eve_region_ymax - self.config.eve_region_ymin))
+        n_eve = np.random.poisson(self.config.eve_density_lambda * area)
+        if n_eve == 0:
+            return np.empty((0, 2), dtype=float)
+        xs = np.random.uniform(self.config.eve_region_xmin, self.config.eve_region_xmax, size=n_eve)
+        ys = np.random.uniform(self.config.eve_region_ymin, self.config.eve_region_ymax, size=n_eve)
+        return np.column_stack([xs, ys])
+
     def _reset_entity_positions(self):
         self.user_position = np.append(self._random_position_2d(), 0.0)
-        self.eve_position = np.append(self._random_position_2d(), 0.0)
         self.relay_position = np.append(self._random_position_2d(), self.config.relay_altitude)
         self.jammer_position = np.append(self._random_position_2d(), self.config.jammer_altitude)
+        if self.config.use_multiple_eves:
+            self.eve_positions = self._generate_hppp_eves()
+            self.num_eves = self.eve_positions.shape[0]
+            if self.num_eves > 0:
+                dists = np.linalg.norm(self.eve_positions - self.user_position[:2], axis=1)
+                nearest_idx = int(np.argmin(dists))
+                self.eve_position = np.append(self.eve_positions[nearest_idx], 0.0)
+            else:
+                self.eve_position = np.array([0.0, 0.0, 0.0])
+            print(f"Generated {self.num_eves} eavesdroppers using HPPP")
+        else:
+            self.eve_position = np.append(self._random_position_2d(), 0.0)
+            self.eve_positions = np.array([self.eve_position[:2]], dtype=float)
+            self.num_eves = 1
 
     def reset(self) -> np.ndarray:
         self._step_counter = 0
@@ -143,8 +179,13 @@ class UAVEnvironment:
     def _generate_fading(self) -> None:
         self.fading["UR"] = generate_fading(self.config.fading_model, self.config.rician_k)
         self.fading["RB"] = generate_fading(self.config.fading_model, self.config.rician_k)
-        self.fading["UE"] = generate_fading(self.config.fading_model, self.config.rician_k)
-        self.fading["JE"] = generate_fading(self.config.fading_model, self.config.rician_k)
+        if self.config.use_multiple_eves:
+            n = self.num_eves
+            self.fading["UE"] = np.array([generate_fading(self.config.fading_model, self.config.rician_k) for _ in range(n)])
+            self.fading["JE"] = np.array([generate_fading(self.config.fading_model, self.config.rician_k) for _ in range(n)])
+        else:
+            self.fading["UE"] = generate_fading(self.config.fading_model, self.config.rician_k)
+            self.fading["JE"] = generate_fading(self.config.fading_model, self.config.rician_k)
 
     def _clip_to_bounds(self, pos: np.ndarray, altitude: float) -> np.ndarray:
         xy = np.clip(pos[:2], -self.half_area, self.half_area)
@@ -383,6 +424,11 @@ class UAVEnvironment:
                 "roles_swapped": bool(self.roles_swapped),
                 "effective_relay_label": "jammer_uav" if self.roles_swapped else "relay_uav",
                 "effective_jammer_label": "relay_uav" if self.roles_swapped else "jammer_uav",
+                # Multi-Eve logging fields (Phase 5)
+                "num_eves": self.num_eves,
+                "nearest_eve_distance": float(np.min([compute_distance(self.user_position[:2], ep) for ep in self.eve_positions])) if self.num_eves > 0 else 0.0,
+                "mean_eve_distance": float(np.mean([compute_distance(self.user_position[:2], ep) for ep in self.eve_positions])) if self.num_eves > 0 else 0.0,
+                "max_eve_capacity": float(rates.get("max_eve_capacity", 0.0)),
             }
         )
 
@@ -396,6 +442,20 @@ class UAVEnvironment:
         rates = self.compute_rates(gains) if needs_comms else {}
         needs_dist = mode in ("full", "full_eh", "full_ntn")
         distances = self.compute_distances() if needs_dist else {}
+
+        # Compute aggregated Eve features for multi-Eve mode
+        eve_agg_features = None
+        if self.config.use_multiple_eves:
+            n = self.num_eves
+            if n > 0:
+                d_UE_all = np.array([compute_distance(self.user_position[:2], ep) for ep in self.eve_positions])
+                nearest_eve_dist = float(np.min(d_UE_all))
+                mean_eve_dist = float(np.mean(d_UE_all))
+            else:
+                nearest_eve_dist = 0.0
+                mean_eve_dist = 0.0
+            max_eve_cap = rates.get("max_eve_capacity", 0.0) if needs_comms else 0.0
+            eve_agg_features = np.array([nearest_eve_dist, mean_eve_dist, max_eve_cap, float(n)])
 
         return build_observation(
             mode=mode,
@@ -431,6 +491,9 @@ class UAVEnvironment:
             satellite_position=self.satellite_position,
             h_sat_relay=self.h_sat_relay,
             satellite_altitude_m=self.config.satellite_altitude_km * 1000.0,
+            # Multi-Eve aggregated features
+            use_multiple_eves=self.config.use_multiple_eves,
+            eve_agg_features=eve_agg_features,
         )
 
     def compute_channel_gain(self, tx_pos: np.ndarray, rx_pos: np.ndarray,
@@ -453,10 +516,25 @@ class UAVEnvironment:
             self.user_position, relay_position, self.fading["UR"])
         gains["h_RB"] = self.compute_channel_gain(
             relay_position, self.bs_position, self.fading["RB"])
-        gains["h_UE"] = self.compute_channel_gain(
-            self.user_position, self.eve_position, self.fading["UE"])
-        gains["h_JE"] = self.compute_channel_gain(
-            jammer_position, self.eve_position, self.fading["JE"])
+        if self.config.use_multiple_eves:
+            n = self.num_eves
+            if n == 0:
+                gains["h_UE"] = np.array([], dtype=float)
+                gains["h_JE"] = np.array([], dtype=float)
+            else:
+                h_UE_list = [self.compute_channel_gain(
+                    self.user_position, np.append(self.eve_positions[i], 0.0), self.fading["UE"][i])
+                    for i in range(n)]
+                h_JE_list = [self.compute_channel_gain(
+                    jammer_position, np.append(self.eve_positions[i], 0.0), self.fading["JE"][i])
+                    for i in range(n)]
+                gains["h_UE"] = np.array(h_UE_list)
+                gains["h_JE"] = np.array(h_JE_list)
+        else:
+            gains["h_UE"] = self.compute_channel_gain(
+                self.user_position, self.eve_position, self.fading["UE"])
+            gains["h_JE"] = self.compute_channel_gain(
+                jammer_position, self.eve_position, self.fading["JE"])
         if self.config.enable_ntn:
             self.ntn_fading_sat_relay = generate_fading(
                 "rician", K=10.0 ** (self.config.ntn_rician_k_db / 10.0))
@@ -473,27 +551,59 @@ class UAVEnvironment:
     def compute_distances(self) -> dict:
         relay_position = self.jammer_position if self.roles_swapped else self.relay_position
         jammer_position = self.relay_position if self.roles_swapped else self.jammer_position
+        d_UR = compute_distance(self.user_position, relay_position)
+        d_RB = compute_distance(relay_position, self.bs_position)
+        if self.config.use_multiple_eves:
+            n = self.num_eves
+            if n == 0:
+                d_UE = 0.0
+                d_JE = 0.0
+            else:
+                d_UE_all = np.array([compute_distance(self.user_position[:2], ep) for ep in self.eve_positions])
+                d_JE_all = np.array([compute_distance(jammer_position[:2], ep) for ep in self.eve_positions])
+                nearest_idx = int(np.argmin(d_UE_all))
+                d_UE = float(d_UE_all[nearest_idx])
+                d_JE = float(d_JE_all[nearest_idx])
+        else:
+            d_UE = compute_distance(self.user_position, self.eve_position)
+            d_JE = compute_distance(jammer_position, self.eve_position)
         return {
-            "d_UR": compute_distance(self.user_position, relay_position),
-            "d_RB": compute_distance(relay_position, self.bs_position),
-            "d_UE": compute_distance(self.user_position, self.eve_position),
-            "d_JE": compute_distance(jammer_position, self.eve_position),
+            "d_UR": d_UR,
+            "d_RB": d_RB,
+            "d_UE": d_UE,
+            "d_JE": d_JE,
         }
+
+    def _fmt_fading(self, val):
+        if isinstance(val, np.ndarray):
+            if val.size == 0:
+                return "[]"
+            return f"min={val.min():.6f} max={val.max():.6f} mean={val.mean():.6f}"
+        return f"{val:.6f}"
+
+    def _fmt_gain(self, val):
+        if isinstance(val, np.ndarray):
+            if val.size == 0:
+                return "[]"
+            return f"min={val.min():.6e} max={val.max():.6e}"
+        return f"{val:.6e}"
 
     def print_channel_gains(self, gains: dict | None = None) -> None:
         if gains is None:
             gains = self.compute_all_channel_gains()
         print("\n-> Fading Values ")
         model_label = self.config.fading_model.capitalize()
-        print(f"  f_UR ({model_label})     : {self.fading['UR']:.6f}")
-        print(f"  f_RB ({model_label})     : {self.fading['RB']:.6f}")
-        print(f"  f_UE ({model_label})     : {self.fading['UE']:.6f}")
-        print(f"  f_JE ({model_label})     : {self.fading['JE']:.6f}")
+        print(f"  f_UR ({model_label})     : {self._fmt_fading(self.fading['UR'])}")
+        print(f"  f_RB ({model_label})     : {self._fmt_fading(self.fading['RB'])}")
+        print(f"  f_UE ({model_label})     : {self._fmt_fading(self.fading['UE'])}")
+        print(f"  f_JE ({model_label})     : {self._fmt_fading(self.fading['JE'])}")
         print("\n-> Channel Gains ")
-        print(f"  h_UR (User->Relay): {gains['h_UR']:.6e}")
-        print(f"  h_RB (Relay->BS)  : {gains['h_RB']:.6e}")
-        print(f"  h_UE (User->Eve)  : {gains['h_UE']:.6e}")
-        print(f"  h_JE (Jammer->Eve): {gains['h_JE']:.6e}")
+        print(f"  h_UR (User->Relay): {self._fmt_gain(gains['h_UR'])}")
+        print(f"  h_RB (Relay->BS)  : {self._fmt_gain(gains['h_RB'])}")
+        print(f"  h_UE (User->Eve)  : {self._fmt_gain(gains['h_UE'])}")
+        print(f"  h_JE (Jammer->Eve): {self._fmt_gain(gains['h_JE'])}")
+        if self.config.use_multiple_eves:
+            print(f"  Num Eves: {self.num_eves}")
         if "h_sat_relay" in gains:
             print(f"  h_SR (Sat->Relay): {gains['h_sat_relay']:.6e}  (NTN)")
 
@@ -512,10 +622,31 @@ class UAVEnvironment:
             r_legit_ntn = 0.5 * self.config.bandwidth * np.log2(1.0 + min(gamma_ur, gamma_rb_ntn))
             r_legit = max(r_legit, r_legit_ntn)
 
-        gamma_e = (self.config.user_power * gains["h_UE"]) / (
-            noise_power + self.current_jammer_power * gains["h_JE"]
-        )
-        r_eve = self.config.bandwidth * np.log2(1.0 + gamma_e)
+        max_eve_capacity = 0.0
+        worst_eve_idx = -1
+        h_ue_scalar = float(gains["h_UE"]) if not isinstance(gains["h_UE"], np.ndarray) else 0.0
+        h_je_scalar = float(gains["h_JE"]) if not isinstance(gains["h_JE"], np.ndarray) else 0.0
+        if self.config.use_multiple_eves:
+            n = self.num_eves
+            if n == 0:
+                gamma_e = 0.0
+                r_eve = 0.0
+            else:
+                gamma_e_arr = (self.config.user_power * gains["h_UE"]) / (
+                    noise_power + self.current_jammer_power * gains["h_JE"]
+                )
+                r_eve_arr = self.config.bandwidth * np.log2(1.0 + gamma_e_arr)
+                worst_eve_idx = int(np.argmax(r_eve_arr))
+                gamma_e = float(gamma_e_arr[worst_eve_idx])
+                r_eve = float(r_eve_arr[worst_eve_idx])
+                max_eve_capacity = r_eve
+                h_ue_scalar = float(gains["h_UE"][worst_eve_idx])
+                h_je_scalar = float(gains["h_JE"][worst_eve_idx])
+        else:
+            gamma_e = (self.config.user_power * gains["h_UE"]) / (
+                noise_power + self.current_jammer_power * gains["h_JE"]
+            )
+            r_eve = self.config.bandwidth * np.log2(1.0 + gamma_e)
 
         r_sec = max(r_legit - r_eve, 0.0)
 
@@ -528,6 +659,10 @@ class UAVEnvironment:
             "R_sec": float(r_sec),
             "jammer_power": float(self.current_jammer_power),
             "fading_model": self.config.fading_model,
+            "max_eve_capacity": float(max_eve_capacity),
+            "worst_eve_index": worst_eve_idx,
+            "h_UE_scalar": h_ue_scalar,
+            "h_JE_scalar": h_je_scalar,
         }
 
 def compute_distance(p1: np.ndarray, p2: np.ndarray) -> float:

@@ -16,6 +16,9 @@ def build_env_config(
     ntn_carrier_frequency_hz: float = 2e9,
     ntn_atmospheric_loss_db: float = 0.5,
     ntn_rician_k_db: float = 10.0,
+    # Multi-Eve (HPPP) params
+    use_multiple_eves: bool = True,
+    eve_density_lambda: float = 2e-5,
 ) -> EnvConfig:
     return EnvConfig(
         seed=seed,
@@ -33,4 +36,6 @@ def build_env_config(
         ntn_carrier_frequency_hz=ntn_carrier_frequency_hz,
         ntn_atmospheric_loss_db=ntn_atmospheric_loss_db,
         ntn_rician_k_db=ntn_rician_k_db,
+        use_multiple_eves=use_multiple_eves,
+        eve_density_lambda=eve_density_lambda,
     )

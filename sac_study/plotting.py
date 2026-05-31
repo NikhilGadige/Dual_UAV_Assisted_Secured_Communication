@@ -164,7 +164,7 @@ def generate_single_run_plots(csv_path: str, output_dir: str) -> list[str]:
 
 def generate_channel_comparison(output_root: str = "sac_study/output") -> list[str]:
     root = Path(output_root)
-    csvs = sorted(root.glob("sac_*_h*/sac_training_log.csv"))
+    csvs = sorted(root.glob("*/training_log.csv"))
     if len(csvs) < 2:
         return []
     by_fading = {read_log(csv_path)[0]["fading_model"]: (csv_path, read_log(csv_path)) for csv_path in csvs}

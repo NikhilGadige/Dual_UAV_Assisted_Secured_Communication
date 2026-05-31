@@ -13,7 +13,7 @@ import torch.optim as optim
 
 from core.environment import UAVEnvironment
 from sac_study.configs import SACStudyConfig, build_output_dir, make_env_config
-from sac_study.plotting import generate_channel_comparison, generate_single_run_plots
+from sac_study.plotting import generate_single_run_plots
 
 
 LOG_STD_MIN = -5.0
@@ -148,6 +148,7 @@ def train_sac(cfg: SACStudyConfig | None = None, output_dir: str | None = None) 
     device = torch.device(cfg.device if cfg.device == "cuda" and torch.cuda.is_available() else "cpu")
     out_dir = Path(output_dir or build_output_dir(cfg))
     out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
 
     env = UAVEnvironment(make_env_config(cfg.seed, cfg))
     state_dim = env.reset().shape[0]
@@ -187,6 +188,10 @@ def train_sac(cfg: SACStudyConfig | None = None, output_dir: str | None = None) 
         ep_energy = 0.0
         ep_jammer_power = 0.0
         ep_steps = 0
+        ep_num_eves = 0
+        ep_nearest_eve_dist = 0.0
+        ep_mean_eve_dist = 0.0
+        ep_max_eve_cap = 0.0
         relay_start = env.relay_position.copy()
         jammer_start = env.jammer_position.copy()
         relay_path = 0.0
@@ -213,6 +218,10 @@ def train_sac(cfg: SACStudyConfig | None = None, output_dir: str | None = None) 
             ep_reve += info["R_eve"]
             ep_energy += info["total_energy_j"]
             ep_jammer_power += info["jammer_power"]
+            ep_num_eves += info.get("num_eves", 1)
+            ep_nearest_eve_dist += info.get("nearest_eve_distance", 0.0)
+            ep_mean_eve_dist += info.get("mean_eve_distance", 0.0)
+            ep_max_eve_cap += info.get("max_eve_capacity", 0.0)
             relay_path += float(np.linalg.norm(env.relay_position - relay_prev))
             jammer_path += float(np.linalg.norm(env.jammer_position - jammer_prev))
             ep_steps += 1
@@ -297,6 +306,10 @@ def train_sac(cfg: SACStudyConfig | None = None, output_dir: str | None = None) 
                 "avg_R_legit_mbps": float((ep_rlegit / max(ep_steps, 1)) / 1e6),
                 "avg_R_eve_mbps": float((ep_reve / max(ep_steps, 1)) / 1e6),
                 "avg_R_sec_mbps": float(avg_rsec),
+                "avg_num_eves": float(ep_num_eves / max(ep_steps, 1)),
+                "avg_nearest_eve_distance": float(ep_nearest_eve_dist / max(ep_steps, 1)),
+                "avg_mean_eve_distance": float(ep_mean_eve_dist / max(ep_steps, 1)),
+                "avg_max_eve_capacity": float((ep_max_eve_cap / max(ep_steps, 1)) / 1e6),
                 "eval_R_sec_mbps": eval_rsec,
                 "last_eval_R_sec_mbps": last_eval,
                 "episode_secrecy_mbits": float((ep_rsec * env.config.dt) / 1e6),
@@ -329,14 +342,14 @@ def train_sac(cfg: SACStudyConfig | None = None, output_dir: str | None = None) 
                 f"roll100={roll100:.3f} Mbps"
             )
 
-    log_path = out_dir / "sac_training_log.csv"
-    actor_path = out_dir / "sac_actor.pt"
-    critic1_path = out_dir / "sac_critic1.pt"
+    log_path = out_dir / "training_log.csv"
+    actor_path = out_dir / "checkpoints" / "actor.pt"
+    critic1_path = out_dir / "checkpoints" / "critic1.pt"
     _write_rows(rows, log_path)
     torch.save(actor.state_dict(), actor_path)
     torch.save(critic1.state_dict(), critic1_path)
-    plot_paths = generate_single_run_plots(str(log_path), str(out_dir))
-    generate_channel_comparison(cfg.output_root)
+    plot_dir = out_dir / "plots"
+    plot_paths = generate_single_run_plots(str(log_path), str(plot_dir))
     final_eval = evaluate_actor(actor, cfg, device, cfg.final_eval_episodes, seed_offset=9000)
     print(
         f"\nSAC {cfg.fading_model} complete | episodes={cfg.episodes} | "

@@ -23,8 +23,11 @@ def build_geometry_observation(
 
 
 def build_channel_observation(gains: dict, rates: dict) -> np.ndarray:
+    # Use scalar versions for h_UE/h_JE if available (multi-Eve mode)
+    h_ue = rates.get("h_UE_scalar", gains["h_UE"])
+    h_je = rates.get("h_JE_scalar", gains["h_JE"])
     return np.concatenate([
-        np.array([gains["h_UR"], gains["h_RB"], gains["h_UE"], gains["h_JE"]]),
+        np.array([gains["h_UR"], gains["h_RB"], h_ue, h_je]),
         np.array([rates["gamma_UR"], rates["gamma_RB"], rates["gamma_E"]]),
         np.array([rates["R_legit"], rates["R_eve"], rates["R_sec"]]),
         np.array([rates["jammer_power"]]),
@@ -150,7 +153,7 @@ def normalize_observation(
         out[37] /= jammer_battery_capacity
         # EH features at indices 38-42 are already in [0,1] / {0,1}
 
-    elif mode == "full_ntn":           # [full(38) + eh(5) + ntn(3) = 46]
+    elif mode == "full_ntn":           # [full(38) + eh(5) + ntn(3) = 46] (+ eve_agg 4 = 50)
         out[:15] /= half_area
         out[15:19] /= max_speed
         out[19:21] /= user_max_speed
@@ -172,7 +175,27 @@ def normalize_observation(
     else:
         raise ValueError(f"Unknown observation mode: {mode}")
 
+    # Normalise the 4 Eve aggregated features appended at the end (if present)
+    # Features: [nearest_eve_dist, mean_eve_dist, max_eve_capacity, num_eves]
+    n_extra = len(out) - _base_len_for_mode(mode)
+    if n_extra >= 4:
+        eve_start = -n_extra
+        out[eve_start] /= max_dist       # nearest_eve_distance
+        out[eve_start + 1] /= max_dist   # mean_eve_distance
+        out[eve_start + 2] = np.log10(np.maximum(out[eve_start + 2], eps))  # max_eve_capacity
+        out[eve_start + 3] /= 100.0      # num_eves (normalize by expected max 100)
+
     return out
+
+
+def _base_len_for_mode(mode: str) -> int:
+    if mode == "full":
+        return 38
+    if mode == "full_eh":
+        return 43
+    if mode == "full_ntn":
+        return 46
+    return 0
 
 
 def build_observation(
@@ -209,6 +232,9 @@ def build_observation(
     satellite_position: np.ndarray | None = None,
     h_sat_relay: float = 0.0,
     satellite_altitude_m: float = 500_000.0,
+    # Multi-Eve aggregated features (Phase 4)
+    use_multiple_eves: bool = False,
+    eve_agg_features: np.ndarray | None = None,
 ) -> np.ndarray:
     if mode == "geometry":
         state = build_geometry_observation(
@@ -240,6 +266,9 @@ def build_observation(
                 satellite_position, relay_position, h_sat_relay,
             )
             state = np.concatenate([state, ntn])
+        # Append aggregated Eve features (multi-Eve mode)
+        if use_multiple_eves and eve_agg_features is not None:
+            state = np.concatenate([state, eve_agg_features.astype(float)])
     else:
         raise ValueError(f"Unknown observation mode: {mode}")
 
