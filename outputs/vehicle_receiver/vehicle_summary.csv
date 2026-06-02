@@ -1,0 +1,13 @@
+Algorithm,Channel,Final_Rolling100_Secrecy,Best_Secrecy,Average_Reward,Convergence_Episode
+DQN,Rician,4.1094,6.3460,3.6012,2
+DQN,Rayleigh,2.6912,4.6448,2.1979,2
+DDPG,Rician,5.7404,8.2259,4.5075,3
+DDPG,Rayleigh,3.6972,5.9746,2.4455,18
+D3QN,Rician,5.6387,7.9256,5.0810,57
+D3QN,Rayleigh,3.6073,6.0811,2.9841,55
+PPO,Rician,5.4519,7.8745,4.6911,2
+PPO,Rayleigh,3.6218,6.0214,2.8681,2
+SAC,Rician,5.9223,8.6538,4.9297,17
+SAC,Rayleigh,3.7740,7.2844,2.8135,21
+TD3PG,Rician,5.9658,8.6550,4.8666,16
+TD3PG,Rayleigh,3.7500,6.2900,2.6131,15
