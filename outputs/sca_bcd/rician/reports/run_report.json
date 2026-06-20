@@ -1,0 +1,953 @@
+{
+  "config": {
+    "channel_model": "rician",
+    "seed": 42,
+    "horizon": 12,
+    "max_bcd_iters": 100,
+    "min_bcd_iters": 20,
+    "bcd_patience": 8,
+    "max_sca_iters": 8,
+    "bcd_abs_tolerance": 0.001,
+    "bcd_rel_tolerance": 0.0005,
+    "sca_tolerance": 0.0001,
+    "trust_region_weight": 1.0,
+    "power_trust_region_radius": 0.35,
+    "trajectory_trust_region_radius": 180.0,
+    "area_size": 1000.0,
+    "max_flight_radius": 350.0,
+    "relay_altitude": 50.0,
+    "jammer_altitude": 50.0,
+    "slot_duration": 4.0,
+    "max_speed": 20.0,
+    "collision_distance": 30.0,
+    "bandwidth": 1000000.0,
+    "noise_psd": 3.981071705534985e-18,
+    "beta0": 1.0,
+    "alpha": 2.0,
+    "use_los_model": false,
+    "alpha_los": 2.0,
+    "alpha_nlos": 3.0,
+    "los_a": 9.61,
+    "los_b": 0.2,
+    "rician_k": 5.0,
+    "user_power_min": 0.001,
+    "user_power_max": 0.2,
+    "relay_power_min": 0.001,
+    "relay_power_max": 0.5,
+    "jammer_power_min": 0.0,
+    "jammer_power_max": 0.5,
+    "avg_user_power_budget": 0.15,
+    "avg_relay_power_budget": 0.35,
+    "avg_jammer_power_budget": 0.25,
+    "min_average_secrecy_rate": 0.0,
+    "alpha_min": 0.05,
+    "alpha_max": 0.95,
+    "alpha_trust_region_radius": 0.5,
+    "eve_uncertainty_radius": 30.0,
+    "use_vehicle_receiver": true,
+    "vehicle_mobility_mode": "straight_road",
+    "vehicle_max_speed": 8.0,
+    "use_multiple_eves": true,
+    "eve_density_lambda": 2e-05,
+    "generate_future_study_artifacts": true,
+    "future_long_run_iterations": 4000
+  },
+  "raw_objective_history": [
+    8.279955550814512,
+    14.737351641121215,
+    19.177136872768177,
+    19.484995855972855,
+    19.515869768168777,
+    19.519013750662456,
+    19.51915857615372,
+    19.519281952466205,
+    19.519389242029444,
+    19.519484466173733,
+    19.51957064172623,
+    19.519650030817015,
+    19.519724330151906,
+    19.519794812318498,
+    19.51986243174028,
+    19.51992790399979,
+    19.519991765945417,
+    19.520054421139374,
+    19.52011617048361,
+    19.520177241285467,
+    19.52023780304229
+  ],
+  "display_objective_history": [
+    8.279955550814512,
+    14.737351641121215,
+    19.177136872768177,
+    19.484995855972855,
+    19.515869768168777,
+    19.519013750662456,
+    19.51915857615372,
+    19.519281952466205,
+    19.519389242029444,
+    19.519484466173733,
+    19.51957064172623,
+    19.519650030817015,
+    19.519724330151906,
+    19.519794812318498,
+    19.51986243174028,
+    19.51992790399979,
+    19.519991765945417,
+    19.520054421139374,
+    19.52011617048361,
+    19.520177241285467,
+    19.52023780304229
+  ],
+  "sca_objective_history": {
+    "power": [
+      [
+        8.279955550814512,
+        8.374117612547082,
+        8.474450658163416,
+        8.582364106455124,
+        8.699323215402051,
+        8.827156248681336,
+        8.968341444991202,
+        9.12645223541812,
+        9.307121371528522
+      ],
+      [
+        14.737351641121215,
+        15.02346710851355,
+        15.37395483033058,
+        15.72030500705644,
+        16.00721234209242,
+        16.21640668423305,
+        16.22371107949066,
+        16.22371107949066
+      ],
+      [
+        19.177136872768177,
+        19.177136872768177
+      ],
+      [
+        19.484995855972855,
+        19.484995855972855
+      ],
+      [
+        19.515869768168777,
+        19.515869768168777
+      ],
+      [
+        19.519013750662456,
+        19.519013750662456
+      ],
+      [
+        19.51915857615372,
+        19.51915857615372
+      ],
+      [
+        19.519281952466205,
+        19.519281952466205
+      ],
+      [
+        19.519389242029444,
+        19.519389242029444
+      ],
+      [
+        19.519484466173733,
+        19.519484466173733
+      ],
+      [
+        19.51957064172623,
+        19.51957064172623
+      ],
+      [
+        19.519650030817015,
+        19.519650030817015
+      ],
+      [
+        19.519724330151906,
+        19.519724330151906
+      ],
+      [
+        19.519794812318498,
+        19.519794812318498
+      ],
+      [
+        19.51986243174028,
+        19.51986243174028
+      ],
+      [
+        19.51992790399979,
+        19.51992790399979
+      ],
+      [
+        19.519991765945417,
+        19.519991765945417
+      ],
+      [
+        19.520054421139374,
+        19.520054421139374
+      ],
+      [
+        19.52011617048361,
+        19.52011617048361
+      ],
+      [
+        19.520177241285467,
+        19.520177241285467
+      ]
+    ],
+    "relay": [
+      [
+        9.307121371528522,
+        9.307123684251854,
+        9.307125997016282,
+        9.307128309794773,
+        9.307130622653657,
+        9.30713293546826,
+        9.307135248359849,
+        9.307137561174931,
+        9.307139874064044
+      ],
+      [
+        16.22371107949066,
+        16.223715949328838,
+        16.223720812697415,
+        16.22372568254686,
+        16.223730552402994,
+        16.223735422265722,
+        16.22374029213312,
+        16.223745162005056,
+        16.22375003188154
+      ],
+      [
+        19.177136872768177,
+        19.177143962221113,
+        19.17715105168244,
+        19.177158141152127,
+        19.17716523063018,
+        19.17717232011677,
+        19.177179409611885,
+        19.17718649911514,
+        19.177193588625276
+      ],
+      [
+        19.484995855972855,
+        19.485003204986757,
+        19.485010554007964,
+        19.485017903036482,
+        19.485025252072294,
+        19.485032601115357,
+        19.485039950165564,
+        19.48504729922292,
+        19.485054648287424
+      ],
+      [
+        19.515869768168777,
+        19.51587714350199,
+        19.51588451884238,
+        19.515891894189945,
+        19.515899269544686,
+        19.5159066449066,
+        19.515914020275677,
+        19.515921395651915,
+        19.515928771034805
+      ],
+      [
+        19.519013750662456,
+        19.519021128668538,
+        19.51902850668075,
+        19.519035884699207,
+        19.519043262723812,
+        19.519050640754696,
+        19.519058018791895,
+        19.519065396835344,
+        19.5190727748851
+      ],
+      [
+        19.51915857615372,
+        19.519165954282208,
+        19.519173332416926,
+        19.519180710557926,
+        19.51918808870519,
+        19.519195466858708,
+        19.519202845018466,
+        19.519210223184434,
+        19.51921760135441
+      ],
+      [
+        19.519281952466205,
+        19.51928933066066,
+        19.519296708875483,
+        19.519304087094145,
+        19.519311465360243,
+        19.519318843510785,
+        19.519326221966708,
+        19.519333600162394,
+        19.5193409785765
+      ],
+      [
+        19.519389242029444,
+        19.51939662032323,
+        19.519403998632473,
+        19.5194113772603,
+        19.519418755612897,
+        19.519426133926242,
+        19.51943351194486,
+        19.519440890260444,
+        19.51944826849602
+      ],
+      [
+        19.519484466173733,
+        19.51949184456499,
+        19.51949922295248,
+        19.519506601345018,
+        19.519513979743923,
+        19.519521358149195,
+        19.51952873656084,
+        19.51953611497882,
+        19.519543493403173
+      ],
+      [
+        19.51957064172623,
+        19.519578020179804,
+        19.519585398639737,
+        19.519592777106023,
+        19.51960015557863,
+        19.519607534057585,
+        19.519614912542256,
+        19.51962229103222,
+        19.51962966952755
+      ],
+      [
+        19.519650030817015,
+        19.519657409334815,
+        19.519664787858755,
+        19.519672166389757,
+        19.51967954492783,
+        19.519686923472957,
+        19.519694302025144,
+        19.519701680584387,
+        19.519709059150678
+      ],
+      [
+        19.519724330151906,
+        19.51973170873808,
+        19.519739087331303,
+        19.519746465931565,
+        19.519753844538865,
+        19.519761223153655,
+        19.519768601776033,
+        19.51977598040599,
+        19.519783359043476
+      ],
+      [
+        19.519794812318498,
+        19.519802190973163,
+        19.519809569635374,
+        19.519816948305134,
+        19.51982432698244,
+        19.519831705667304,
+        19.519839084359727,
+        19.519846463059675,
+        19.51985384176717
+      ],
+      [
+        19.51986243174028,
+        19.519869810462506,
+        19.519877189192282,
+        19.51988456792961,
+        19.51989194667447,
+        19.519899325455246,
+        19.51990670422262,
+        19.519914082767524,
+        19.519921461508748
+      ],
+      [
+        19.51992790399979,
+        19.519935282795764,
+        19.519942661654003,
+        19.519950040463716,
+        19.51995741927257,
+        19.519964798286725,
+        19.519972177147714,
+        19.519979555305355,
+        19.519986934070108
+      ],
+      [
+        19.519991765945417,
+        19.519999144851287,
+        19.520006523707117,
+        19.52001390259063,
+        19.520021281437444,
+        19.520028660332333,
+        19.52003603922295,
+        19.520043418051923,
+        19.520050797229
+      ],
+      [
+        19.520054421139374,
+        19.52006180014548,
+        19.520069179064,
+        19.52007655775558,
+        19.52008393669636,
+        19.520091315693538,
+        19.52009869457131,
+        19.520106073588614,
+        19.520113452549268
+      ],
+      [
+        19.52011617048361,
+        19.520123549390775,
+        19.52013092836914,
+        19.520138307288672,
+        19.520145686288327,
+        19.52015306528465,
+        19.52016044432002,
+        19.5201678235394,
+        19.520175202834967
+      ],
+      [
+        19.520177241285467,
+        19.520184620306722,
+        19.520191999642076,
+        19.520199378688066,
+        19.520206757792497,
+        19.52021413691436,
+        19.520221515876933,
+        19.520228894851698,
+        19.520236274205974
+      ]
+    ],
+    "jammer": [
+      [
+        9.326961463484412
+      ],
+      [
+        16.22375003188154
+      ],
+      [
+        19.177193588625276
+      ],
+      [
+        19.485054648287424,
+        19.485054648287424
+      ],
+      [
+        19.515928771034805,
+        19.515928771034805
+      ],
+      [
+        19.5190727748851,
+        19.5190727748851
+      ],
+      [
+        19.51921760135441,
+        19.51921760135441
+      ],
+      [
+        19.5193409785765
+      ],
+      [
+        19.51944826849602
+      ],
+      [
+        19.519543493403173
+      ],
+      [
+        19.51962966952755
+      ],
+      [
+        19.519709059150678
+      ],
+      [
+        19.519783359043476
+      ],
+      [
+        19.51985384176717
+      ],
+      [
+        19.519921461508748
+      ],
+      [
+        19.519986934070108
+      ],
+      [
+        19.520050797229
+      ],
+      [
+        19.520113452549268
+      ],
+      [
+        19.520175202834967
+      ],
+      [
+        19.520236274205974
+      ]
+    ],
+    "alpha": [
+      [
+        9.326961463484412,
+        10.003545952508075,
+        10.680130441278123,
+        11.356714857573207,
+        12.033296858244393,
+        12.70984262020159,
+        13.386426994997281,
+        14.063011403049913,
+        14.737351641121215
+      ],
+      [
+        16.22375003188154,
+        16.956759409707065,
+        17.597364833611085,
+        18.077818921001526,
+        18.438159479854132,
+        18.708409457063723,
+        18.91110241574248,
+        19.063122106279454,
+        19.177136872768177
+      ],
+      [
+        19.177193588625276,
+        19.262704948120057,
+        19.32683846727588,
+        19.374938606088616,
+        19.411013709828023,
+        19.438070037680887,
+        19.458362283467554,
+        19.473581467766596,
+        19.484995855972855
+      ],
+      [
+        19.485054648287424,
+        19.49361546855492,
+        19.500036111303913,
+        19.504851585170226,
+        19.508463185255028,
+        19.511171881827934,
+        19.513203401949536,
+        19.51472704043611,
+        19.515869768168777
+      ],
+      [
+        19.515928771034805,
+        19.516785818926028,
+        19.51742860426093,
+        19.517910692837898,
+        19.518272258960355,
+        19.518543433324144,
+        19.51874681392879,
+        19.51889934925786,
+        19.519013750662456
+      ],
+      [
+        19.5190727748851,
+        19.51915857615372
+      ],
+      [
+        19.51921760135441,
+        19.519281952466205
+      ],
+      [
+        19.5193409785765,
+        19.519389242029444
+      ],
+      [
+        19.51944826849602,
+        19.519484466173733
+      ],
+      [
+        19.519543493403173,
+        19.51957064172623
+      ],
+      [
+        19.51962966952755,
+        19.519650030817015
+      ],
+      [
+        19.519709059150678,
+        19.519724330151906
+      ],
+      [
+        19.519783359043476,
+        19.519794812318498
+      ],
+      [
+        19.51985384176717,
+        19.51986243174028
+      ],
+      [
+        19.519921461508748,
+        19.51992790399979
+      ],
+      [
+        19.519986934070108,
+        19.519991765945417
+      ],
+      [
+        19.520050797229,
+        19.520054421139374
+      ],
+      [
+        19.520113452549268,
+        19.52011617048361
+      ],
+      [
+        19.520175202834967,
+        19.520177241285467
+      ],
+      [
+        19.520236274205974,
+        19.52023780304229
+      ]
+    ]
+  },
+  "final_metrics": {
+    "iteration": 20,
+    "objective": 19.52023780304229,
+    "average_secrecy_rate": 19.52023780304229,
+    "average_num_eves": 21.0,
+    "average_nearest_eve_distance": 404.11275414246325,
+    "average_max_eve_capacity": 11.507464615510573,
+    "mean_alpha": 0.9499998689302936,
+    "min_alpha": 0.9499975884991618,
+    "max_alpha": 0.9500012226692787
+  },
+  "checkpoint": "outputs\\sca_bcd\\rician\\checkpoints\\latest_solution.npz",
+  "diagnostics": [
+    {
+      "iteration": 0,
+      "raw_objective": 8.279955550814512,
+      "display_objective": 0.0,
+      "average_secrecy_rate": 8.279955550814512,
+      "absolute_improvement": 0.0,
+      "relative_improvement": 0.0,
+      "relay_update_norm": 0.0,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 0.0,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.0,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.0
+    },
+    {
+      "iteration": 1,
+      "raw_objective": 14.737351641121215,
+      "display_objective": 14.737351641121215,
+      "average_secrecy_rate": 14.737351641121215,
+      "absolute_improvement": 6.457396090306704,
+      "relative_improvement": 0.7798829414816701,
+      "relay_update_norm": 0.0060832125603339825,
+      "jammer_update_norm": 66.15545691119179,
+      "power_update_norm": 0.6985578059602199,
+      "alpha_update_norm": 0.9996294622374012,
+      "power_accepted_step_size": 0.25,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 2,
+      "raw_objective": 19.177136872768177,
+      "display_objective": 19.177136872768177,
+      "average_secrecy_rate": 19.177136872768177,
+      "absolute_improvement": 4.439785231646962,
+      "relative_improvement": 0.30126072443428403,
+      "relay_update_norm": 0.00882564983315405,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.34710417469910226,
+      "alpha_update_norm": 0.5117612879699408,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 3,
+      "raw_objective": 19.484995855972855,
+      "display_objective": 19.484995855972855,
+      "average_secrecy_rate": 19.484995855972855,
+      "absolute_improvement": 0.3078589832046781,
+      "relative_improvement": 0.01605343828159471,
+      "relay_update_norm": 0.010650460960733358,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 0.053818926298424184,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 4,
+      "raw_objective": 19.515869768168777,
+      "display_objective": 19.515869768168777,
+      "average_secrecy_rate": 19.515869768168777,
+      "absolute_improvement": 0.03087391219592206,
+      "relative_improvement": 0.001584496728874494,
+      "relay_update_norm": 0.010843677134228067,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 0.005390644886080095,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 5,
+      "raw_objective": 19.519013750662456,
+      "display_objective": 19.519013750662456,
+      "average_secrecy_rate": 19.519013750662456,
+      "absolute_improvement": 0.003143982493678976,
+      "relative_improvement": 0.00016109876377669557,
+      "relay_update_norm": 0.010863076583604761,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 0.0005380435013252716,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 6,
+      "raw_objective": 19.51915857615372,
+      "display_objective": 19.51915857615372,
+      "average_secrecy_rate": 19.51915857615372,
+      "absolute_improvement": 0.00014482549126526578,
+      "relative_improvement": 7.419713573404832e-06,
+      "relay_update_norm": 0.010865038509799738,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 1.492877505533224e-05,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 7,
+      "raw_objective": 19.519281952466205,
+      "display_objective": 19.519281952466205,
+      "average_secrecy_rate": 19.519281952466205,
+      "absolute_improvement": 0.00012337631248371395,
+      "relative_improvement": 6.320780273512457e-06,
+      "relay_update_norm": 0.010865122763267517,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 1.119223556910893e-05,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 8,
+      "raw_objective": 19.519389242029444,
+      "display_objective": 19.519389242029444,
+      "average_secrecy_rate": 19.519389242029444,
+      "absolute_improvement": 0.00010728956323902139,
+      "relative_improvement": 5.496593752797636e-06,
+      "relay_update_norm": 0.010865207937618275,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 8.390953633068872e-06,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 9,
+      "raw_objective": 19.519484466173733,
+      "display_objective": 19.519484466173733,
+      "average_secrecy_rate": 19.519484466173733,
+      "absolute_improvement": 9.52241442888635e-05,
+      "relative_improvement": 4.878438721014151e-06,
+      "relay_update_norm": 0.010865201428762582,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 6.29082469296496e-06,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 10,
+      "raw_objective": 19.51957064172623,
+      "display_objective": 19.51957064172623,
+      "average_secrecy_rate": 19.51957064172623,
+      "absolute_improvement": 8.617555249657016e-05,
+      "relative_improvement": 4.414847771513023e-06,
+      "relay_update_norm": 0.010865277419867024,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 4.716345451009868e-06,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 11,
+      "raw_objective": 19.519650030817015,
+      "display_objective": 19.519650030817015,
+      "average_secrecy_rate": 19.519650030817015,
+      "absolute_improvement": 7.938909078575307e-05,
+      "relative_improvement": 4.067153537488478e-06,
+      "relay_update_norm": 0.010865324032831199,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 3.5359439952985934e-06,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 12,
+      "raw_objective": 19.519724330151906,
+      "display_objective": 19.519724330151906,
+      "average_secrecy_rate": 19.519724330151906,
+      "absolute_improvement": 7.429933489078167e-05,
+      "relative_improvement": 3.8063866295492075e-06,
+      "relay_update_norm": 0.010865367734769878,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 2.6509826570214187e-06,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 13,
+      "raw_objective": 19.519794812318498,
+      "display_objective": 19.519794812318498,
+      "average_secrecy_rate": 19.519794812318498,
+      "absolute_improvement": 7.04821665920008e-05,
+      "relative_improvement": 3.6108177246708223e-06,
+      "relay_update_norm": 0.010865419454504349,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 1.9875136621170547e-06,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 14,
+      "raw_objective": 19.51986243174028,
+      "display_objective": 19.51986243174028,
+      "average_secrecy_rate": 19.51986243174028,
+      "absolute_improvement": 6.761942178101776e-05,
+      "relative_improvement": 3.4641461363284765e-06,
+      "relay_update_norm": 0.010865473542221263,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 1.4900989155876834e-06,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 15,
+      "raw_objective": 19.51992790399979,
+      "display_objective": 19.51992790399979,
+      "average_secrecy_rate": 19.51992790399979,
+      "absolute_improvement": 6.547225951081259e-05,
+      "relative_improvement": 3.3541352937176137e-06,
+      "relay_update_norm": 0.010865485887429095,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 1.1171765626814395e-06,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 16,
+      "raw_objective": 19.519991765945417,
+      "display_objective": 19.519991765945417,
+      "average_secrecy_rate": 19.519991765945417,
+      "absolute_improvement": 6.386194562679748e-05,
+      "relative_improvement": 3.271628150517485e-06,
+      "relay_update_norm": 0.010865496387353527,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 8.375877110439924e-07,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 17,
+      "raw_objective": 19.520054421139374,
+      "display_objective": 19.520054421139374,
+      "average_secrecy_rate": 19.520054421139374,
+      "absolute_improvement": 6.265519395753927e-05,
+      "relative_improvement": 3.2097961263922015e-06,
+      "relay_update_norm": 0.010865675807982596,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 6.279724274883633e-07,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 18,
+      "raw_objective": 19.52011617048361,
+      "display_objective": 19.52011617048361,
+      "average_secrecy_rate": 19.52011617048361,
+      "absolute_improvement": 6.174934423697209e-05,
+      "relative_improvement": 3.1633797173280534e-06,
+      "relay_update_norm": 0.010865656054386148,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 4.708176182360298e-07,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 19,
+      "raw_objective": 19.520177241285467,
+      "display_objective": 19.520177241285467,
+      "average_secrecy_rate": 19.520177241285467,
+      "absolute_improvement": 6.107080185557834e-05,
+      "relative_improvement": 3.1286085247752554e-06,
+      "relay_update_norm": 0.010865787046126382,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 3.5299353198387174e-07,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    },
+    {
+      "iteration": 20,
+      "raw_objective": 19.52023780304229,
+      "display_objective": 19.52023780304229,
+      "average_secrecy_rate": 19.52023780304229,
+      "absolute_improvement": 6.056175682189746e-05,
+      "relative_improvement": 3.1025208466759433e-06,
+      "relay_update_norm": 0.010865850081124867,
+      "jammer_update_norm": 0.0,
+      "power_update_norm": 0.0,
+      "alpha_update_norm": 2.646566536999413e-07,
+      "power_accepted_step_size": 0.0,
+      "relay_accepted_step_size": 0.25,
+      "jammer_accepted_step_size": 0.0,
+      "alpha_accepted_step_size": 0.25
+    }
+  ]
+}
