@@ -12,6 +12,7 @@ from sca_bcd_exp.optimization.secrecy_optimizer import SolutionState, clone_solu
 if TYPE_CHECKING:
     from sca_bcd_exp.environments.sca_environment import SCABCDEnvironment
 
+
 def optimize_alpha(
     env: SCABCDEnvironment,
     config: SCABCDConfig,
@@ -35,7 +36,7 @@ def optimize_alpha(
             var <= config.alpha_max,
             cp.norm(var - current_x, 2) <= config.alpha_trust_region_radius,
         ]
-    
+
     result = solve_sca(
         initial_x=x0,
         objective_fn=objective_fn,

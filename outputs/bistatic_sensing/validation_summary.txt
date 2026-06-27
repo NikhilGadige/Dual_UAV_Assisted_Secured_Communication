@@ -1,0 +1,17 @@
+Bistatic Sensing Validation Summary
+========================================
+Num vehicles: 3
+Sensing power: 1.0 W
+Noise PSD: 3.981071705534985e-18
+Rician K: 5.0
+
+Final sensing snapshot:
+  V0 (car, rcs=10.0m^2):
+    d_total=989.7m, gain=1.3302e-10, SNR=33.4124
+  V1 (truck, rcs=100.0m^2):
+    d_total=1686.1m, gain=4.7899e-10, SNR=120.3165
+  V2 (motorcycle, rcs=3.2m^2):
+    d_total=1508.7m, gain=5.7807e-12, SNR=1.4521
+
+Total sensing gain: 6.177864e-10
+Total SNR: 155.1809

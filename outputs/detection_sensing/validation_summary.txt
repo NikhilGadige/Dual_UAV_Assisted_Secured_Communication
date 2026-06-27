@@ -1,0 +1,23 @@
+================================================================
+  Detection Sensing Validation (Phase 4D)
+================================================================
+
+  [ PASS ] plot_roc_curves
+  [ PASS ] plot_pd_vs_snr
+  [ PASS ] plot_pd_vs_pilots
+  [ PASS ] plot_pd_vs_targets
+  [ PASS ] plot_detector_comparison
+  [ PASS ] test_h0_dimensions
+  [ PASS ] test_h1_dimensions
+  [ PASS ] test_energy_statistic_positivity
+  [ PASS ] test_glrt_statistic_positivity
+  [ PASS ] test_threshold_monotonicity
+  [ PASS ] test_pd_increases_with_snr
+  [ PASS ] test_pfa_approximately_constant
+  [ PASS ] test_more_pilots_improves_pd
+  [ PASS ] test_multi_target_support
+  [ PASS ] test_roc_monotonicity
+
+================================================================
+  Total: 15  |  Passed: 15  |  Failed: 0
+================================================================

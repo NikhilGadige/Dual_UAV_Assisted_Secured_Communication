@@ -1,0 +1,49 @@
+FD Jammer Validation Summary
+========================================
+N_ris: 16
+N_j: 4
+RIS altitude: 50.0 m
+Jammer altitude: 50.0 m
+Rician K: 5.0
+Eve density lambda: 2e-05
+Num eves: 21
+
+Mode: isotropic
+  P_j=0.00: R_sec=0.0000, sinr_user=169.2089, sinr_eve=318.4375
+  P_j=0.10: R_sec=0.0000, sinr_user=0.0071, sinr_eve=0.0146
+  P_j=0.20: R_sec=0.0000, sinr_user=0.0011, sinr_eve=0.0046
+  P_j=0.30: R_sec=2213.0152, sinr_user=0.0076, sinr_eve=0.0061
+  P_j=0.40: R_sec=658.6169, sinr_user=0.0013, sinr_eve=0.0009
+  P_j=0.50: R_sec=0.0000, sinr_user=0.0004, sinr_eve=0.1789
+  P_j=0.60: R_sec=2338.5788, sinr_user=0.0024, sinr_eve=0.0008
+  P_j=0.70: R_sec=0.0000, sinr_user=0.0005, sinr_eve=0.0017
+  P_j=0.80: R_sec=0.0000, sinr_user=0.0007, sinr_eve=0.0034
+  P_j=0.90: R_sec=0.0000, sinr_user=0.0001, sinr_eve=0.0004
+  P_j=1.00: R_sec=2914.0122, sinr_user=0.0024, sinr_eve=0.0004
+
+Mode: mrt
+  P_j=0.00: R_sec=0.0000, sinr_user=169.2089, sinr_eve=318.4375
+  P_j=0.10: R_sec=22792.7729, sinr_user=0.0248, sinr_eve=0.0087
+  P_j=0.20: R_sec=11488.6976, sinr_user=0.0124, sinr_eve=0.0043
+  P_j=0.30: R_sec=7679.8949, sinr_user=0.0083, sinr_eve=0.0029
+  P_j=0.40: R_sec=5767.7430, sinr_user=0.0062, sinr_eve=0.0022
+  P_j=0.50: R_sec=4617.9580, sinr_user=0.0050, sinr_eve=0.0017
+  P_j=0.60: R_sec=3850.3925, sinr_user=0.0041, sinr_eve=0.0014
+  P_j=0.70: R_sec=3301.6199, sinr_user=0.0035, sinr_eve=0.0012
+  P_j=0.80: R_sec=2889.7603, sinr_user=0.0031, sinr_eve=0.0011
+  P_j=0.90: R_sec=2569.2589, sinr_user=0.0028, sinr_eve=0.0010
+  P_j=1.00: R_sec=2312.7530, sinr_user=0.0025, sinr_eve=0.0009
+
+Mode: nullspace
+  P_j=0.00: R_sec=0.0000, sinr_user=169.2089, sinr_eve=318.4375
+  P_j=0.10: R_sec=7398636.9475, sinr_user=169.2089, sinr_eve=0.0087
+  P_j=0.20: R_sec=7122476.4877, sinr_user=169.2089, sinr_eve=0.2215
+  P_j=0.30: R_sec=7231368.7738, sinr_user=169.2089, sinr_eve=0.1327
+  P_j=0.40: R_sec=7406943.9803, sinr_user=169.2089, sinr_eve=0.0029
+  P_j=0.50: R_sec=7409299.6948, sinr_user=169.2089, sinr_eve=0.0013
+  P_j=0.60: R_sec=7343209.6436, sinr_user=169.2089, sinr_eve=0.0482
+  P_j=0.70: R_sec=7408930.6683, sinr_user=169.2089, sinr_eve=0.0015
+  P_j=0.80: R_sec=7408891.1186, sinr_user=169.2089, sinr_eve=0.0016
+  P_j=0.90: R_sec=7409164.5995, sinr_user=169.2089, sinr_eve=0.0014
+  P_j=1.00: R_sec=7396047.7367, sinr_user=169.2089, sinr_eve=0.0105
+

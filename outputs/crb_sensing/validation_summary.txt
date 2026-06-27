@@ -1,0 +1,23 @@
+================================================================
+  CRB Sensing Validation (Phase 4C)
+================================================================
+
+  [ PASS ] plot_crb_vs_snr
+  [ PASS ] plot_crb_vs_antennas
+  [ PASS ] plot_crb_vs_pilots
+  [ PASS ] plot_fim_eigenvalues
+  [ PASS ] plot_crb_heatmap
+  [ PASS ] test_steering_derivative_dimensions
+  [ PASS ] test_derivative_finite_values
+  [ PASS ] test_fim_symmetry
+  [ PASS ] test_fim_psd
+  [ PASS ] test_positive_crb
+  [ PASS ] test_higher_snr_decreases_crb
+  [ PASS ] test_more_antennas_decreases_crb
+  [ PASS ] test_more_pilots_decreases_crb
+  [ PASS ] test_single_target_analytical_sanity
+  [ PASS ] test_multi_target_support
+
+================================================================
+  Total: 15  |  Passed: 15  |  Failed: 0
+================================================================

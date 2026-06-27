@@ -1,0 +1,17 @@
+Vehicle Reflection Validation Summary
+========================================
+Num vehicles: 3
+Mobility mode: straight_road
+Vehicle max speed: 10.0 m/s
+Rician K: 5.0
+Eve density lambda: 2e-05
+Num eves: 21
+
+Vehicle details:
+  V0: type=car, rcs=10.0m^2 (10.0 dBsm), speed=7.99 m/s
+  V1: type=truck, rcs=100.0m^2 (20.0 dBsm), speed=5.23 m/s
+  V2: type=motorcycle, rcs=3.2m^2 (5.0 dBsm), speed=9.14 m/s
+
+Final rates:
+  R_sec = 1272848.5908 bps
+  Vehicles: 3

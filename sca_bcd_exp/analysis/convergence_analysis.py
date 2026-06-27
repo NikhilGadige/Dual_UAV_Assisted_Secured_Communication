@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
+
 def is_monotone_non_decreasing(values: list[float], tolerance: float = 1e-8) -> bool:
     return all(values[idx + 1] + tolerance >= values[idx] for idx in range(len(values) - 1))
 
@@ -18,6 +19,7 @@ def rolling_average(values: list[float] | np.ndarray, window: int = 100) -> np.n
         return arr.copy()
     kernel = np.ones(window, dtype=float) / window
     return np.convolve(arr, kernel, mode="valid")
+
 
 def future_convergence_placeholders() -> list[str]:
     return [

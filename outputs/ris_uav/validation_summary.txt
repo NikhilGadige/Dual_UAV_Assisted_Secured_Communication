@@ -1,0 +1,20 @@
+RIS-UAV Validation Summary
+========================================
+N_ris: 16
+RIS altitude: 50.0 m
+Area: 1000.0x1000.0 m
+Rician K: 5.0
+Eve density lambda: 2e-05
+Number of eves: 15
+
+Random phases:
+  R_sec = 0.0000 bps
+  g_user = 7.139638e-11
+  g_eve_max = 7.749195e-10
+
+Aligned phases:
+  R_sec = 1750597.5902 bps
+  g_user = 3.001523e-09
+  g_eve_max = 8.863927e-10
+  User SINR = 376.9743
+  Max Eve SINR = 111.3259
