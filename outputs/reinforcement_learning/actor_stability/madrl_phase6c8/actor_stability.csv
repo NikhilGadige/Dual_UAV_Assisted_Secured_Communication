@@ -1,0 +1,2 @@
+label,temperature,clip_logits,lr,avg_secrecy,avg_sensing,avg_reward,corr_reward_secrecy,bs_saturation,max_saturation,pre_tanh_mean,pre_tanh_max,reward_improvement
+baseline,1.0,False,0.0003,2.89739995868174,42.91035141561696,0.05050918982037826,0.5196102356583234,0.3935,0.548,3.188945406133578,47.37665557861328,0.3385214949830559

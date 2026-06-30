@@ -1,0 +1,4 @@
+algo,agent,total_dims,lb_count,ub_count,lb_fraction,ub_fraction,saturation_fraction,clipped_fraction,mean_value,std_value
+mappo,bs_beamformer,2000,1100,800,0.55,0.4,0.95,0.0,-0.1513,0.9855
+mappo,uav_trajectory,750,200,200,0.2667,0.2667,0.5333,0.0,0.0353,0.9113
+mappo,jammer_beamformer,2000,850,900,0.425,0.45,0.875,0.0,0.0614,0.9641

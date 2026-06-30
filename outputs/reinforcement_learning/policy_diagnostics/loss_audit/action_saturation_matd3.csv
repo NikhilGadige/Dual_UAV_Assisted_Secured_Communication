@@ -1,0 +1,4 @@
+algo,agent,total_dims,lb_count,ub_count,lb_fraction,ub_fraction,saturation_fraction,clipped_fraction,mean_value,std_value
+matd3,bs_beamformer,2000,935,800,0.4675,0.4,0.8675,0.0,-0.0647,0.9843
+matd3,uav_trajectory,750,410,340,0.5467,0.4533,1.0,0.0,-0.0933,0.9956
+matd3,jammer_beamformer,2000,773,958,0.3865,0.479,0.8655,0.0,0.1151,0.9747

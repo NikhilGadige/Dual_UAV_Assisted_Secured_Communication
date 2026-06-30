@@ -1,0 +1,24 @@
+SCA-BCD Solver Summary
+=======================
+
+Channel model: rician
+Seed: 3
+BCD iterations: 4
+Converged: True
+
+Initial objective: 1.886684
+Final objective:   7.347735
+Initial secrecy:   2.948172
+Final secrecy:     8.481308
+Initial sensing:   11.067403
+Final sensing:     43.359442
+
+Final constraint violations:
+  bs_power_excess: 0.000000e+00
+  bs_power_negative: 0.000000e+00
+  jammer_power_excess: 0.000000e+00
+  uav_speed_excess: 0.000000e+00
+  uav_boundary_violation: 0.000000e+00
+  secrecy_rate_shortfall: 0.000000e+00
+  sensing_utility_shortfall: 0.000000e+00
+  total_violation: 0.000000e+00

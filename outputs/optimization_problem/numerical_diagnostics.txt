@@ -1,0 +1,21 @@
+================================================================
+  Numerical Diagnostics  --  Phase 5A (pre-5B)
+================================================================
+
+  Channel Condition Numbers:
+    RIS effective channel cond : 1.0
+    Sensing matrix cond        : 4.868114056337186e+17
+    CRB FIM cond               : 4.372319248569034e+40
+    CRB trace (mean)           : 1.1516436990839296e+21
+
+  alpha=0.0:  f=1.333333  R_s=3.4237  U_sense=4.0000
+  alpha=0.5:  f=0.787619  R_s=8.4667  U_sense=4.0000
+  alpha=1.0:  f=0.733470  R_s=25.6714  U_sense=4.0000
+
+  SINR ranges:
+    User SINR  : [9.463768e+00, 3.112553e+02]
+    Eve SINR   : [2.269326e-03, 1.647033e+01]
+
+  MC reproducibility: PASS  (avg1=4.032621, avg2=4.032621)
+
+================================================================

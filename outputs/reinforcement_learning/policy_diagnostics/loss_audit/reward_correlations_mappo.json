@@ -1,0 +1,8 @@
+{
+  "corr_total_secrecy": -0.27491003446302015,
+  "corr_total_sensing": 0.9955419877370948,
+  "corr_total_penalties": 0.0,
+  "mean_reward": 7.221319653587622,
+  "mean_secrecy": 1.457171278210932,
+  "mean_sensing": 43.2243822197111
+}

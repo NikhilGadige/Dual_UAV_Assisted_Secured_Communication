@@ -1,0 +1,4 @@
+block,objective_sensitivity_mean,objective_sensitivity_std,secrecy_sensitivity_mean,secrecy_sensitivity_std
+power,3.671992e-03,3.675831e-03,2.570395e-01,2.573081e-01
+trajectory,1.478248e-04,1.302511e-05,1.034773e-02,9.117558e-04
+jammer,1.827756e-01,6.614647e-02,1.279429e+01,4.630253e+00

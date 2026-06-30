@@ -1,0 +1,17 @@
+tol_obj,tol_var,converged,reason,n_iters,final_obj
+0.001,0.001,True,zero_obj_change,3,0.9635814749595744
+0.001,0.0001,True,zero_obj_change,3,0.9635814749595744
+0.001,1e-05,True,zero_obj_change,3,0.9635814749595744
+0.001,1e-06,True,zero_obj_change,3,0.9635814749595744
+0.0001,0.001,True,zero_obj_change,3,0.9635814749595744
+0.0001,0.0001,True,zero_obj_change,3,0.9635814749595744
+0.0001,1e-05,True,zero_obj_change,3,0.9635814749595744
+0.0001,1e-06,True,zero_obj_change,3,0.9635814749595744
+1e-05,0.001,True,zero_obj_change,3,0.9635814749595744
+1e-05,0.0001,True,zero_obj_change,3,0.9635814749595744
+1e-05,1e-05,True,zero_obj_change,3,0.9635814749595744
+1e-05,1e-06,True,zero_obj_change,3,0.9635814749595744
+1e-06,0.001,True,zero_obj_change,3,0.9635814749595744
+1e-06,0.0001,True,zero_obj_change,3,0.9635814749595744
+1e-06,1e-05,True,zero_obj_change,3,0.9635814749595744
+1e-06,1e-06,True,zero_obj_change,3,0.9635814749595744

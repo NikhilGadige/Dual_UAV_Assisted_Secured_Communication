@@ -1,0 +1,43 @@
+================================================================
+  Channel Debug Summary  —  Phase 5A (v2)
+================================================================
+
+  Trials: 10
+  Avg secrecy rate:      22.9756  bps/Hz
+  Min secrecy rate:      20.0275  bps/Hz
+  Max secrecy rate:      24.3143  bps/Hz
+  Avg R_user (mean):     6.5425  bps/Hz
+  Avg max R_eve:         4.3034  bps/Hz
+  Avg user SINR:         173.705932  linear
+  Avg eve SINR:          2.663909  linear
+  Fraction Rs > 0.01:    100.00%
+
+  Jammer Mode Comparison:
+    Protect  Rs = 20.9630
+    Blast    Rs = 5.3469
+    Isotropic Rs = 11.2006
+
+  Path Loss Table (default scenario, UAV midpoint):
+  Link                 Distance (m)   PL (linear)   
+  ------------------------------------------------
+  BS -> UAV(mid)       202.2          2.44e-05      
+  UAV(mid) -> User     58.5           2.92e-04      
+  UAV(mid) -> Eve0     161.0          3.86e-05      
+  UAV(mid) -> Eve1     151.1          4.38e-05      
+  UAV(mid) -> Eve2     140.8          5.04e-05      
+  Jammer -> User       163.6          3.74e-05      
+  Jammer -> Eve0       292.0          1.17e-05      
+  Jammer -> Eve1       70.4           2.02e-04      
+
+  Configuration:
+    N_ris     = 16
+    N_j       = 4
+    P_bs_max  = 10.0
+    P_j_max   = 0.05
+    sigma2    = 1e-08
+    N_time    = 5
+    v_max     = 50.0
+    R_S_REF   = 35.0
+    U_SENSE_REF = 3.0
+
+================================================================

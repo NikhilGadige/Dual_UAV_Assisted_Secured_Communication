@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
 
 import cvxpy as cp
 import numpy as np
+
+from sca_bcd_exp.configs import SCABCDConfig
 
 
 Array = np.ndarray
@@ -14,84 +15,104 @@ Array = np.ndarray
 class SCAResult:
     x: Array
     objective_history: list[float]
-    accepted_steps: int
-    accepted_step_sizes: list[float]
+    obj_pen_history: list[float]
+    violation_history: list[float]
+    n_iters: int
     status: str
 
 
-def solve_sca(
-    initial_x: Array,
-    objective_fn: Callable[[Array], float],
-    gradient_fn: Callable[[Array], Array],
-    constraint_builder: Callable[[cp.Variable, Array], list],
-    max_iters: int,
-    tolerance: float,
-    trust_region_weight: float,
-    candidate_step_sizes: tuple[float, ...],
-    projector: Callable[[Array], Array] | None = None,
-    solver: str = "SCS",
+def solve_sca_block(
+    x0: Array,
+    objective_fn,
+    gradient_fn,
+    var_lb: Array,
+    var_ub: Array,
+    config: SCABCDConfig,
+    trust_region_radius: float | None = None,
 ) -> SCAResult:
-    xk = np.asarray(initial_x, dtype=float).copy()
-    if projector is not None:
-        xk = projector(xk)
+    xk = np.asarray(x0, dtype=float).copy()
+    dim = xk.size
+    reg = config.reg_eps
+    rho = config.rho_penalty
 
-    history = [float(objective_fn(xk))]
-    accepted_steps = 0
-    accepted_step_sizes: list[float] = []
-    status = "converged"
+    A_reg = np.eye(dim) * reg
 
-    for _ in range(max_iters):
-        grad = np.asarray(gradient_fn(xk), dtype=float).reshape(-1)
-        x = cp.Variable(xk.size)
-        surrogate = grad @ (x - xk) - 0.5 * trust_region_weight * cp.sum_squares(x - xk)
-        problem = cp.Problem(cp.Maximize(surrogate), constraint_builder(x, xk))
+    obj_history = []
+    pen_history = []
+    viol_history = []
+
+    base_val = objective_fn(xk)
+    obj_history.append(base_val)
+    pen_history.append(0.0)
+    viol_history.append(0.0)
+
+    status = "max_iters"
+
+    for iteration in range(config.max_sca_iters):
+        grad = np.asarray(gradient_fn(xk), dtype=float)
+
+        H = A_reg.copy()
+
+        x = cp.Variable(dim)
+        xi_lb = cp.Variable(dim, nonneg=True)
+        xi_ub = cp.Variable(dim, nonneg=True)
+
+        surrogate = grad @ (x - xk) - 0.5 * cp.quad_form(x - xk, H)
+        penalty = rho * (cp.sum(xi_lb) + cp.sum(xi_ub))
+        objective = cp.Maximize(surrogate - penalty)
+
+        constraints = [
+            var_lb - xi_lb <= x,
+            x <= var_ub + xi_ub,
+        ]
+        if trust_region_radius is not None and trust_region_radius > 0:
+            constraints.append(cp.norm(x - xk, 2) <= trust_region_radius)
+
+        problem = cp.Problem(objective, constraints)
         try:
-            problem.solve(solver=solver, warm_start=True, verbose=False)
+            problem.solve(solver=cp.CLARABEL, verbose=False, warm_start=True)
         except Exception:
-            problem.solve(solver="SCS", warm_start=True, verbose=False)
+            try:
+                problem.solve(solver=cp.SCS, verbose=False, warm_start=True)
+            except Exception:
+                problem.solve(solver=cp.ECOS, verbose=False, warm_start=True)
 
         if x.value is None:
-            status = str(problem.status)
+            status = f"solve_failed_{problem.status}"
             break
 
-        candidate = np.asarray(x.value, dtype=float).reshape(xk.shape)
-        if projector is not None:
-            candidate = projector(candidate)
+        candidate = np.asarray(x.value, dtype=float)
 
-        base_value = history[-1]
-        accepted = None
-        accepted_step_size = None
-        for step_size in candidate_step_sizes:
-            trial = xk + step_size * (candidate - xk)
-            if projector is not None:
-                trial = projector(trial)
-            trial_value = float(objective_fn(trial))
-            if trial_value >= base_value - 1e-9:
-                accepted = trial
-                accepted_step_size = float(step_size)
-                history.append(trial_value)
-                accepted_steps += 1
-                accepted_step_sizes.append(float(step_size))
+        accepted = False
+        for step in config.sca_candidate_step_sizes:
+            trial = xk + step * (candidate - xk)
+            trial = np.clip(trial, var_lb, var_ub)
+            f_trial = objective_fn(trial)
+            f_current = obj_history[-1]
+            if f_trial >= f_current - 1e-9:
+                xk = trial.copy()
+                obj_history.append(f_trial)
+                pen_history.append(0.0)
+                viol_history.append(0.0)
+                accepted = True
                 break
 
-        if accepted is None:
-            history.append(base_value)
-            accepted_step_sizes.append(0.0)
-            status = str(problem.status)
+        if not accepted:
+            status = "line_search_failed"
             break
 
-        step_norm = float(np.linalg.norm(accepted - xk))
-        improvement = float(abs(history[-1] - base_value))
-        xk = accepted
-        if step_norm <= tolerance and improvement <= tolerance:
+        step_norm = float(np.linalg.norm(xk - np.asarray(x0 if iteration == 0 else obj_history[-2], dtype=float)))
+        obj_change = abs(obj_history[-1] - obj_history[-2]) if len(obj_history) >= 2 else 1.0
+
+        if obj_change < config.tol_obj and step_norm < config.tol_var:
+            status = "converged"
             break
-        if accepted_step_size is not None and accepted_step_size <= min(candidate_step_sizes):
-            status = "small_step"
 
     return SCAResult(
         x=xk,
-        objective_history=history,
-        accepted_steps=accepted_steps,
-        accepted_step_sizes=accepted_step_sizes,
+        objective_history=obj_history,
+        obj_pen_history=pen_history,
+        violation_history=viol_history,
+        n_iters=iteration + 1,
         status=status,
     )

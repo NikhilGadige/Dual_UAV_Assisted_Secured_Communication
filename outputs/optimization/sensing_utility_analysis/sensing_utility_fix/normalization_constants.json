@@ -1,0 +1,22 @@
+{
+  "original": 3.999999954346945,
+  "original_std": 1.196402557142647e-07,
+  "original_min": 3.9999992738238337,
+  "original_max": 3.999999997054273,
+  "log": 12.884212028399011,
+  "log_std": 1.2162112990806775,
+  "log_min": 8.007955306728311,
+  "log_max": 14.64299026011135,
+  "inverse": 4311235481.078327,
+  "inverse_std": 1968610854.6933618,
+  "inverse_min": 700634417.0364356,
+  "inverse_max": 9776904418.848997,
+  "normalized": 4.0,
+  "normalized_std": 0.0,
+  "normalized_min": 4.0,
+  "normalized_max": 4.0,
+  "exponential": 3.960763038165167,
+  "exponential_std": 0.09160114228189654,
+  "exponential_min": 3.4788251908137564,
+  "exponential_max": 3.997055543366165
+}

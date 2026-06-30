@@ -3,28 +3,42 @@ from __future__ import annotations
 import numpy as np
 
 
-def is_monotone_non_decreasing(values: list[float], tolerance: float = 1e-8) -> bool:
-    return all(values[idx + 1] + tolerance >= values[idx] for idx in range(len(values) - 1))
+def has_converged(
+    obj_history: list[float],
+    var_norms: list[float],
+    tol_obj: float = 1e-4,
+    tol_var: float = 1e-4,
+    patience: int = 3,
+) -> bool:
+    if len(obj_history) < patience + 1:
+        return False
+    obj_stable = all(
+        abs(obj_history[-i] - obj_history[-i - 1]) < tol_obj
+        for i in range(1, patience + 1)
+    )
+    var_stable = all(
+        vn < tol_var for vn in var_norms[-patience:]
+    ) if len(var_norms) >= patience else False
+    return obj_stable or var_stable
 
 
-def has_sca_converged(history: list[float], tolerance: float = 1e-4) -> bool:
-    if len(history) < 2:
+def is_objective_finite(obj_history: list[float]) -> bool:
+    return all(np.isfinite(v) for v in obj_history)
+
+
+def violation_decreasing(violation_history: list[dict]) -> bool:
+    if len(violation_history) < 2:
         return True
-    return abs(history[-1] - history[-2]) <= tolerance or history[-1] >= history[0] - tolerance
+    totals = [sum(v.values()) for v in violation_history]
+    return totals[-1] <= totals[0] + 1e-10
 
 
-def rolling_average(values: list[float] | np.ndarray, window: int = 100) -> np.ndarray:
-    arr = np.asarray(values, dtype=float)
-    if arr.size < window:
-        return arr.copy()
-    kernel = np.ones(window, dtype=float) / window
-    return np.convolve(arr, kernel, mode="valid")
+def objective_non_decreasing(obj_history: list[float], tol: float = 1e-8) -> bool:
+    return all(
+        obj_history[i + 1] + tol >= obj_history[i]
+        for i in range(len(obj_history) - 1)
+    )
 
 
-def future_convergence_placeholders() -> list[str]:
-    return [
-        "rolling100_objective.png",
-        "rolling100_secrecy.png",
-        "variance_band.png",
-        "convergence_gap.png",
-    ]
+def check_no_nan_inf(values: list[float]) -> bool:
+    return all(np.isfinite(v) for v in values)

@@ -1,0 +1,49 @@
+================================================================
+  Optimization Problem Validation (Phase 5A — v2)
+================================================================
+
+  [ PASS ] plot_secrecy_vs_alpha
+  [ PASS ] plot_sensing_vs_alpha
+  [ PASS ] plot_weighted_objective_vs_alpha
+  [ PASS ] plot_constraint_violation_breakdown
+  [ PASS ] plot_secrecy_vs_user_distance
+  [ PASS ] plot_secrecy_vs_jammer_power
+  [ PASS ] plot_secrecy_vs_eve_distance
+  [ PASS ] plot_user_and_eve_sinr
+  [ PASS ] plot_secrecy_cdf
+  [ PASS ] plot_weighted_objective_components
+  [ PASS ] generate_channel_debug_summary
+  [ PASS ] generate_monte_carlo_stats_json
+  [ PASS ] generate_numerical_diagnostics
+  [ PASS ] test_secrecy_rate_finite
+  [ PASS ] test_sensing_utility_finite
+  [ PASS ] test_objective_finite
+  [ PASS ] test_ris_constraints
+  [ PASS ] test_power_constraints
+  [ PASS ] test_uav_constraints
+  [ PASS ] test_constraint_violation_reporting
+  [ PASS ] test_weighted_objective_consistency
+  [ PASS ] test_multi_target_support
+  [ PASS ] test_multi_eve_support
+  [ PASS ] test_user_sinr_finite_positive
+  [ PASS ] test_eve_sinr_finite_positive
+  [ PASS ] test_secrecy_rate_not_identically_zero
+  [ PASS ] test_jammer_power_affects_secrecy
+  [ PASS ] test_eve_distance_increases_secrecy
+  [ PASS ] test_all_comm_channels_finite
+  [ PASS ] test_alpha_sweep_not_flat
+  [ PASS ] test_secrecy_vs_alpha_not_constant
+  [ PASS ] test_jammer_directional_behaviour
+  [ PASS ] test_monte_carlo_stats_basic
+  [ PASS ] test_direct_links_affect_sinr
+  [ PASS ] test_jammer_power_sweep_meaningful
+  [ PASS ] test_monte_carlo_json_exists
+  [ PASS ] test_evaluate_wrapper_finite
+  [ PASS ] test_evaluate_wrapper_fields
+  [ PASS ] test_evaluate_wrapper_consistency
+  [ PASS ] test_evaluate_wrapper_extreme_values
+  [ PASS ] test_reproducibility
+
+================================================================
+  Total: 41  |  Passed: 41  |  Failed: 0
+================================================================

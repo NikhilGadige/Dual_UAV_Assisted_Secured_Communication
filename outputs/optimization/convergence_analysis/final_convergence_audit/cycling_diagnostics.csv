@@ -1,0 +1,12 @@
+metric,value
+w_nonzero,1
+w_oscillates,False
+q_nonzero,1
+q_oscillates,False
+v_nonzero,2
+v_oscillates,False
+classification,A) true convergence
+has_two_cycle,False
+monotonic,True
+diminishing_updates,False
+asymptotic_behaviour,False

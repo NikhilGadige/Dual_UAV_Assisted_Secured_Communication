@@ -1,0 +1,107 @@
+======================================================================
+THREE-AGENT MARL
+======================================================================
+
+Agents:
+  1. bs_beamformer  (action: w_bs)
+  2. uav_trajectory (action: q_uav increments)
+  3. jammer_beamformer (action: v_jammer)
+
+Algorithms: MAPPO (100 ep) + MATD3 (100 ep)
+
+============================================================
+VALIDATION TESTS
+============================================================
+PASS: env creation (3 agents)
+PASS: action spaces (bs:40, uav:15, jam:40)
+PASS: obs spaces (bs:77, uav:35, jam:48)
+PASS: reset returns valid observations for all 3 agents
+PASS: deterministic reset
+PASS: all observations finite
+PASS: all actions finite
+PASS: step returns valid dicts
+PASS: all rewards finite
+PASS: action clipping produces feasible actions
+PASS: no NaN after 50 steps
+PASS: constraints satisfied with random actions (clipping works)
+  Random mean: 7.0932, Zeros mean: 2.1528
+PASS: reward computation works
+PASS: MAPPO gradients finite (grad_norm=14.3611)
+PASS: secrecy and sensing within expected ranges
+PASS: close works
+
+========================================
+Results: 16/16 passed, 0 failed
+
+Validation PASSED (16/16 passed)
+  Saved outputs\madrl_phase6b\validation_report.md
+
+============================================================
+RANDOM BASELINE
+============================================================
+  Secrecy=3.4012, Sensing=42.6201
+
+============================================================
+Training MAPPO for 100 episodes (seed=42)
+============================================================
+Ep 10/100 | bs_beamformer: 6.7194 | uav_trajectory: 6.7194 | jammer_beamformer: 6.7194 | Secrecy: 0.2765 | Sensing: 40.3170
+Ep 20/100 | bs_beamformer: 6.9481 | uav_trajectory: 6.9481 | jammer_beamformer: 6.9481 | Secrecy: 1.4819 | Sensing: 41.5771
+  Eval @ ep 20 | Reward: 6.9517 +/- 0.0000 | Secrecy: 1.1290 | Sensing: 41.5950
+Ep 30/100 | bs_beamformer: 6.6696 | uav_trajectory: 6.6696 | jammer_beamformer: 6.6696 | Secrecy: 0.1987 | Sensing: 40.0261
+Ep 40/100 | bs_beamformer: 6.6838 | uav_trajectory: 6.6838 | jammer_beamformer: 6.6838 | Secrecy: 0.8910 | Sensing: 40.0477
+  Eval @ ep 40 | Reward: 6.6091 +/- 0.0000 | Secrecy: 0.9845 | Sensing: 39.4239
+Ep 50/100 | bs_beamformer: 7.1410 | uav_trajectory: 7.1410 | jammer_beamformer: 7.1410 | Secrecy: 3.7266 | Sensing: 42.5431
+Ep 60/100 | bs_beamformer: 7.1452 | uav_trajectory: 7.1452 | jammer_beamformer: 7.1452 | Secrecy: 3.6937 | Sensing: 42.5653
+  Eval @ ep 60 | Reward: 7.1462 +/- 0.0000 | Secrecy: 3.8977 | Sensing: 42.5580
+Ep 70/100 | bs_beamformer: 7.1283 | uav_trajectory: 7.1283 | jammer_beamformer: 7.1283 | Secrecy: 2.3235 | Sensing: 42.5878
+Ep 80/100 | bs_beamformer: 7.0006 | uav_trajectory: 7.0006 | jammer_beamformer: 7.0006 | Secrecy: 2.0825 | Sensing: 41.8401
+  Eval @ ep 80 | Reward: 6.9957 +/- 0.0000 | Secrecy: 1.8249 | Sensing: 41.8161
+Ep 90/100 | bs_beamformer: 7.1415 | uav_trajectory: 7.1415 | jammer_beamformer: 7.1415 | Secrecy: 3.9390 | Sensing: 42.5238
+Ep 100/100 | bs_beamformer: 7.0109 | uav_trajectory: 7.0109 | jammer_beamformer: 7.0109 | Secrecy: 2.9593 | Sensing: 41.8276
+  Eval @ ep 100 | Reward: 7.0080 +/- 0.0000 | Secrecy: 2.7302 | Sensing: 41.8130
+Training complete. Results in outputs\madrl_phase6b\mappo_20260629_134046
+  MAPPO 100ep: first_20=6.9205, last_20=7.0664, improved=True
+
+============================================================
+Training MATD3 for 100 episodes (seed=42)
+============================================================
+Ep 10/100 | bs_beamformer: 7.0029 | uav_trajectory: 7.0029 | jammer_beamformer: 7.0029 | Secrecy: 0.7701 | Sensing: 41.9755
+Ep 20/100 | bs_beamformer: 6.9590 | uav_trajectory: 6.9590 | jammer_beamformer: 6.9590 | Secrecy: 1.5100 | Sensing: 41.6366
+  Eval @ ep 20 | Reward: 6.9637 +/- 0.0000 | Secrecy: 1.6679 | Sensing: 41.5992
+Ep 30/100 | bs_beamformer: 6.2756 | uav_trajectory: 6.2756 | jammer_beamformer: 6.2756 | Secrecy: 2.0274 | Sensing: 37.4919
+Ep 40/100 | bs_beamformer: 6.9529 | uav_trajectory: 6.9529 | jammer_beamformer: 6.9529 | Secrecy: 1.1929 | Sensing: 41.6270
+  Eval @ ep 40 | Reward: 6.9554 +/- 0.0000 | Secrecy: 1.2331 | Sensing: 41.5992
+Ep 50/100 | bs_beamformer: 6.9524 | uav_trajectory: 6.9524 | jammer_beamformer: 6.9524 | Secrecy: 1.2937 | Sensing: 41.6215
+Ep 60/100 | bs_beamformer: 6.9540 | uav_trajectory: 6.9540 | jammer_beamformer: 6.9540 | Secrecy: 1.3355 | Sensing: 41.6215
+  Eval @ ep 60 | Reward: 6.9546 +/- 0.0000 | Secrecy: 1.3369 | Sensing: 41.5992
+Ep 70/100 | bs_beamformer: 6.9528 | uav_trajectory: 6.9528 | jammer_beamformer: 6.9528 | Secrecy: 1.3192 | Sensing: 41.6215
+Ep 80/100 | bs_beamformer: 6.9529 | uav_trajectory: 6.9529 | jammer_beamformer: 6.9529 | Secrecy: 1.3253 | Sensing: 41.6215
+  Eval @ ep 80 | Reward: 6.9548 +/- 0.0000 | Secrecy: 1.3372 | Sensing: 41.5992
+Ep 90/100 | bs_beamformer: 6.9532 | uav_trajectory: 6.9532 | jammer_beamformer: 6.9532 | Secrecy: 1.3363 | Sensing: 41.6222
+Ep 100/100 | bs_beamformer: 6.9537 | uav_trajectory: 6.9537 | jammer_beamformer: 6.9537 | Secrecy: 1.3409 | Sensing: 41.6250
+python : Traceback (most recent call last):
+At line:1 char:24
++ ... _uav_summer; python phase_6b_run.py > phase6b_output.txt 2>&1; echo " ...
++                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  Eval @ ep 100 | Reward: 6.9555 +/- 0.0000 | Secrecy: 1.3372 | Sensing: 41.5992
+Training complete. Results in outputs\madrl_phase6b\matd3_20260629_134459
+  MATD3 100ep: first_20=6.9450, last_20=6.9533, improved=True
+
+============================================================
+GENERATING OUTPUTS
+============================================================
+  Saved outputs\madrl_phase6b\learning_curves.png
+  Saved outputs\madrl_phase6b\comparison_table.csv
+  File "D:\dual_uav_summer\phase_6b_run.py", line 466, in <module>
+    decision = main()
+               ^^^^^^
+  File "D:\dual_uav_summer\phase_6b_run.py", line 408, in main
+    all_pass = write_training_report(
+               ^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\dual_uav_summer\phase_6b_run.py", line 236, in write_training_report
+    f.write(f"| {r['label']} | {r['avg_reward']:.4f} | "
+                                ~^^^^^^^^^^^^^^
+KeyError: 'avg_reward'

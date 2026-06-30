@@ -1,244 +1,202 @@
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 
-from sca_bcd_exp.analysis.convergence_analysis import rolling_average
+import numpy as np
 
 
 def _safe_import_matplotlib():
     try:
         import matplotlib
-
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-
         return plt
     except Exception:
         return None
 
 
-def plot_convergence(training_log: str, plot_dir: str) -> dict[str, str]:
+def save_all_plots(
+    output_dir: str,
+    objective_history: list[float],
+    constraint_history: list[dict],
+    secrecy_history: list[float],
+    sensing_history: list[float],
+) -> dict[str, str]:
     plt = _safe_import_matplotlib()
     if plt is None:
         return {}
 
-    with Path(training_log).open("r", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
-    if not rows:
-        return {}
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    paths = {}
 
-    plot_path = Path(plot_dir)
-    plot_path.mkdir(parents=True, exist_ok=True)
-    iterations = [int(row["iteration"]) for row in rows]
-    objective = [float(row["objective"]) for row in rows]
-    secrecy = [float(row["average_secrecy_rate"]) for row in rows]
-    outputs = {}
-
+    iters = list(range(len(objective_history)))
     fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(iterations, objective, linewidth=2.0)
+    ax.plot(iters, objective_history, linewidth=2.0)
     ax.set_xlabel("BCD iteration")
     ax.set_ylabel("Objective")
-    ax.set_title("SCA-BCD Objective Convergence")
+    ax.set_title("Objective History")
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    file_path = plot_path / "objective_convergence.png"
-    fig.savefig(file_path, dpi=150)
+    p = out / "objective_history.png"
+    fig.savefig(p, dpi=150)
     plt.close(fig)
-    outputs["objective_convergence"] = str(file_path)
+    paths["objective_history"] = str(p)
+
+    if constraint_history:
+        viol_keys = list(constraint_history[0].keys())
+        fig, ax = plt.subplots(figsize=(8, 4))
+        for key in viol_keys:
+            vals = [v.get(key, 0.0) for v in constraint_history]
+            ax.plot(iters, vals, label=key, linewidth=1.5)
+        ax.set_xlabel("BCD iteration")
+        ax.set_ylabel("Violation")
+        ax.set_title("Constraint Violations")
+        ax.legend(fontsize=6)
+        ax.grid(alpha=0.25)
+        fig.tight_layout()
+        p = out / "constraint_history.png"
+        fig.savefig(p, dpi=150)
+        plt.close(fig)
+        paths["constraint_history"] = str(p)
 
     fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(iterations, secrecy, linewidth=2.0)
+    ax.plot(iters, secrecy_history, linewidth=2.0, color="green")
     ax.set_xlabel("BCD iteration")
-    ax.set_ylabel("Average secrecy rate")
-    ax.set_title("Average Secrecy Rate")
+    ax.set_ylabel("Secrecy Rate")
+    ax.set_title("Secrecy History")
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    file_path = plot_path / "average_secrecy_rate.png"
-    fig.savefig(file_path, dpi=150)
+    p = out / "secrecy_history.png"
+    fig.savefig(p, dpi=150)
     plt.close(fig)
-    outputs["average_secrecy_rate"] = str(file_path)
-    return outputs
+    paths["secrecy_history"] = str(p)
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(iters, sensing_history, linewidth=2.0, color="purple")
+    ax.set_xlabel("BCD iteration")
+    ax.set_ylabel("Sensing Utility")
+    ax.set_title("Sensing History")
+    ax.grid(alpha=0.25)
+    fig.tight_layout()
+    p = out / "sensing_history.png"
+    fig.savefig(p, dpi=150)
+    plt.close(fig)
+    paths["sensing_history"] = str(p)
+
+    return paths
 
 
-def plot_diagnostics(diagnostics_log: str, plot_dir: str) -> dict[str, str]:
+def save_convergence_audit_plots(
+    output_dir: str,
+    results: dict[int, object],
+) -> dict[str, str]:
     plt = _safe_import_matplotlib()
     if plt is None:
         return {}
 
-    if not Path(diagnostics_log).exists():
-        return {}
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    paths = {}
 
-    with Path(diagnostics_log).open("r", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
-    if not rows:
-        return {}
+    seeds = sorted(results.keys())
+    max_len = max(len(results[s].objective_history) for s in seeds)
 
-    plot_path = Path(plot_dir)
-    plot_path.mkdir(parents=True, exist_ok=True)
-    iterations = [int(row["iteration"]) for row in rows]
-    relay_norms = [float(row.get("relay_update_norm", 0)) for row in rows]
-    jammer_norms = [float(row.get("jammer_update_norm", 0)) for row in rows]
-    power_norms = [float(row.get("power_update_norm", 0)) for row in rows]
-    rel_improvement = [float(row.get("relative_improvement", 0)) for row in rows]
-    outputs = {}
-
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(iterations, relay_norms, label="Relay", linewidth=1.8)
-    ax.plot(iterations, jammer_norms, label="Jammer", linewidth=1.8)
-    ax.plot(iterations, power_norms, label="Power", linewidth=1.8)
+    # ── 1. objective_history.png ──────────────────────────
+    fig, ax = plt.subplots(figsize=(9, 5))
+    for s in seeds:
+        r = results[s]
+        iters = list(range(len(r.objective_history)))
+        ax.plot(iters, r.objective_history, linewidth=1.5, label=f"seed {s}")
     ax.set_xlabel("BCD iteration")
-    ax.set_ylabel("Update norm")
-    ax.set_title("Variable Update Norms")
-    ax.legend()
+    ax.set_ylabel("Objective (weighted)")
+    ax.set_title("Objective History Across Seeds")
+    ax.legend(fontsize=7)
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    file_path = plot_path / "update_norms.png"
-    fig.savefig(file_path, dpi=150)
+    p = out / "objective_history.png"
+    fig.savefig(p, dpi=150)
     plt.close(fig)
-    outputs["update_norms"] = str(file_path)
+    paths["objective_history"] = str(p)
 
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.semilogy(iterations, [max(r, 1e-12) for r in rel_improvement], linewidth=1.8)
+    # ── 2. update_norms.png ───────────────────────────────
+    fig, axes = plt.subplots(3, 1, figsize=(9, 9), sharex=True)
+    for s in seeds:
+        r = results[s]
+        bcd_iters = list(range(1, len(r.objective_history)))
+        axes[0].plot(bcd_iters, r.delta_w_norms, linewidth=1.2, label=f"seed {s}")
+        axes[1].plot(bcd_iters, r.delta_q_norms, linewidth=1.2, label=f"seed {s}")
+        axes[2].plot(bcd_iters, r.delta_v_norms, linewidth=1.2, label=f"seed {s}")
+    axes[0].set_ylabel("||Δw||")
+    axes[0].set_title("Beamforming Update Norm")
+    axes[0].legend(fontsize=6)
+    axes[0].grid(alpha=0.25)
+    axes[1].set_ylabel("||Δq||")
+    axes[1].set_title("Trajectory Update Norm")
+    axes[1].legend(fontsize=6)
+    axes[1].grid(alpha=0.25)
+    axes[2].set_xlabel("BCD iteration")
+    axes[2].set_ylabel("||Δv||")
+    axes[2].set_title("Jammer Update Norm")
+    axes[2].legend(fontsize=6)
+    axes[2].grid(alpha=0.25)
+    fig.tight_layout()
+    p = out / "update_norms.png"
+    fig.savefig(p, dpi=150)
+    plt.close(fig)
+    paths["update_norms"] = str(p)
+
+    # ── 3. block_contributions.png ────────────────────────
+    fig, axes = plt.subplots(3, 1, figsize=(9, 9), sharex=True)
+    for s in seeds:
+        r = results[s]
+        bcd_iters = list(range(1, len(r.objective_history)))
+        axes[0].plot(bcd_iters, r.block_contributions["power"], linewidth=1.2, label=f"seed {s}")
+        axes[1].plot(bcd_iters, r.block_contributions["trajectory"], linewidth=1.2, label=f"seed {s}")
+        axes[2].plot(bcd_iters, r.block_contributions["jammer"], linewidth=1.2, label=f"seed {s}")
+    axes[0].axhline(0, color="gray", linewidth=0.5, linestyle="--")
+    axes[0].set_ylabel("Δ obj")
+    axes[0].set_title("Power Block Improvement")
+    axes[0].legend(fontsize=6)
+    axes[0].grid(alpha=0.25)
+    axes[1].axhline(0, color="gray", linewidth=0.5, linestyle="--")
+    axes[1].set_ylabel("Δ obj")
+    axes[1].set_title("Trajectory Block Improvement")
+    axes[1].legend(fontsize=6)
+    axes[1].grid(alpha=0.25)
+    axes[2].axhline(0, color="gray", linewidth=0.5, linestyle="--")
+    axes[2].set_xlabel("BCD iteration")
+    axes[2].set_ylabel("Δ obj")
+    axes[2].set_title("Jammer Block Improvement")
+    axes[2].legend(fontsize=6)
+    axes[2].grid(alpha=0.25)
+    fig.tight_layout()
+    p = out / "block_contributions.png"
+    fig.savefig(p, dpi=150)
+    plt.close(fig)
+    paths["block_contributions"] = str(p)
+
+    # ── 4. relative_improvement.png ───────────────────────
+    fig, ax = plt.subplots(figsize=(9, 5))
+    for s in seeds:
+        r = results[s]
+        obj0 = r.objective_history[0]
+        rel_imp = [
+            (v - obj0) / max(abs(obj0), 1e-12)
+            for v in r.objective_history
+        ]
+        iters = list(range(len(rel_imp)))
+        ax.plot(iters, rel_imp, linewidth=1.5, label=f"seed {s}")
     ax.set_xlabel("BCD iteration")
     ax.set_ylabel("Relative improvement")
-    ax.set_title("Relative Objective Improvement (log scale)")
+    ax.set_title("Relative Objective Improvement")
+    ax.legend(fontsize=7)
     ax.grid(alpha=0.25)
+    ax.axhline(0, color="gray", linewidth=0.5, linestyle="--")
     fig.tight_layout()
-    file_path = plot_path / "relative_improvement.png"
-    fig.savefig(file_path, dpi=150)
+    p = out / "relative_improvement.png"
+    fig.savefig(p, dpi=150)
     plt.close(fig)
-    outputs["relative_improvement"] = str(file_path)
+    paths["relative_improvement"] = str(p)
 
-    return outputs
-
-
-def plot_alpha_convergence(diagnostics_log: str, plot_dir: str) -> dict[str, str]:
-    plt = _safe_import_matplotlib()
-    if plt is None:
-        return {}
-
-    if not Path(diagnostics_log).exists():
-        return {}
-
-    with Path(diagnostics_log).open("r", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
-    if not rows:
-        return {}
-
-    plot_path = Path(plot_dir)
-    plot_path.mkdir(parents=True, exist_ok=True)
-    iterations = [int(row["iteration"]) for row in rows]
-    alpha_norms = [float(row.get("alpha_update_norm", 0)) for row in rows]
-    alpha_step_sizes = [float(row.get("alpha_accepted_step_size", 0)) for row in rows]
-    outputs = {}
-
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(iterations, alpha_norms, linewidth=1.8)
-    ax.set_xlabel("BCD iteration")
-    ax.set_ylabel("Alpha update norm")
-    ax.set_title("Alpha Variable Update Norms")
-    ax.grid(alpha=0.25)
-    fig.tight_layout()
-    file_path = plot_path / "alpha_convergence.png"
-    fig.savefig(file_path, dpi=150)
-    plt.close(fig)
-    outputs["alpha_convergence"] = str(file_path)
-
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(iterations, alpha_step_sizes, marker=".", linewidth=1.8)
-    ax.set_xlabel("BCD iteration")
-    ax.set_ylabel("Alpha step size")
-    ax.set_title("Alpha Accepted Step Sizes")
-    ax.grid(alpha=0.25)
-    fig.tight_layout()
-    file_path = plot_path / "alpha_step_sizes.png"
-    fig.savefig(file_path, dpi=150)
-    plt.close(fig)
-    outputs["alpha_step_sizes"] = str(file_path)
-
-    return outputs
-
-
-def plot_mean_alpha_vs_iteration(training_log: str, plot_dir: str) -> dict[str, str]:
-    plt = _safe_import_matplotlib()
-    if plt is None:
-        return {}
-
-    if not Path(training_log).exists():
-        return {}
-
-    with Path(training_log).open("r", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
-    if not rows:
-        return {}
-
-    plot_path = Path(plot_dir)
-    plot_path.mkdir(parents=True, exist_ok=True)
-    iterations = [int(row["iteration"]) for row in rows]
-    if "mean_alpha" not in rows[0] or "min_alpha" not in rows[0]:
-        return {}
-
-    mean_alpha = [float(row["mean_alpha"]) for row in rows]
-    min_alpha = [float(row["min_alpha"]) for row in rows]
-    max_alpha = [float(row["max_alpha"]) for row in rows]
-
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.fill_between(iterations, min_alpha, max_alpha, alpha=0.2, label="Min–Max range")
-    ax.plot(iterations, mean_alpha, linewidth=2.0, label="Mean alpha")
-    ax.set_xlabel("BCD iteration")
-    ax.set_ylabel("Alpha")
-    ax.set_title("Mean Alpha vs. Iteration")
-    ax.legend()
-    ax.grid(alpha=0.25)
-    fig.tight_layout()
-    file_path = plot_path / "mean_alpha_vs_iteration.png"
-    fig.savefig(file_path, dpi=150)
-    plt.close(fig)
-    return {"mean_alpha_vs_iteration": str(file_path)}
-
-
-def prepare_future_long_run_plots(training_log: str, diagnostics_log: str, plot_dir: str) -> list[str]:
-    plt = _safe_import_matplotlib()
-    plot_path = Path(plot_dir)
-    plot_path.mkdir(parents=True, exist_ok=True)
-
-    placeholders = [
-        str(plot_path / "rolling100_objective.png"),
-        str(plot_path / "rolling100_secrecy.png"),
-        str(plot_path / "variance_band.png"),
-        str(plot_path / "convergence_gap.png"),
-    ]
-
-    if plt is None or not Path(diagnostics_log).exists():
-        return placeholders
-
-    with Path(diagnostics_log).open("r", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
-    if not rows:
-        return placeholders
-
-    raw_objective = [float(row.get("raw_objective", 0)) for row in rows]
-    secrecy = [float(row.get("average_secrecy_rate", 0)) for row in rows]
-
-    if len(raw_objective) >= 100:
-        rolling_obj = rolling_average(raw_objective, window=100)
-        rolling_sec = rolling_average(secrecy, window=100)
-
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.plot(rolling_obj, linewidth=2.0)
-        ax.set_title("Rolling-100 Objective")
-        ax.grid(alpha=0.25)
-        fig.tight_layout()
-        fig.savefig(plot_path / "rolling100_objective.png", dpi=150)
-        plt.close(fig)
-
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.plot(rolling_sec, linewidth=2.0)
-        ax.set_title("Rolling-100 Secrecy")
-        ax.grid(alpha=0.25)
-        fig.tight_layout()
-        fig.savefig(plot_path / "rolling100_secrecy.png", dpi=150)
-        plt.close(fig)
-
-    return placeholders
+    return paths

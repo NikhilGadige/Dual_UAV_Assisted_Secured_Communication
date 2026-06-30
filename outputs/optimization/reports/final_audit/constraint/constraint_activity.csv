@@ -1,0 +1,8 @@
+constraint,active_count,total_runs,activation_frequency,mean_violation,max_violation,std_violation
+bs_power_excess,0,5,0.0,0.0,0.0,0.0
+bs_power_negative,0,5,0.0,0.0,0.0,0.0
+jammer_power_excess,0,5,0.0,0.0,0.0,0.0
+uav_speed_excess,0,5,0.0,7.105427357601002e-15,7.105427357601002e-15,0.0
+uav_boundary_violation,0,5,0.0,0.0,0.0,0.0
+secrecy_rate_shortfall,0,5,0.0,0.0,0.0,0.0
+sensing_utility_shortfall,0,5,0.0,0.0,0.0,0.0
