@@ -9,6 +9,15 @@ HPPP_CONFIG = {
     "eve_density_lambda": 2e-5,
 }
 
+ALGORITHM_OUTPUT_DIRS = {
+    "sca": "SCA",
+    "bcd": "BCD",
+}
+
+
+def resolve_hppp_algorithm_dir(algo: str) -> str:
+    return ALGORITHM_OUTPUT_DIRS.get(algo.lower(), algo)
+
 
 def build_hppp_env_config(seed: int = 42, **overrides) -> EnvConfig:
     cfg = build_env_config(seed=seed, **overrides)
@@ -65,6 +74,7 @@ def plot_training_curves(csv_path: str, output_dir: str) -> dict:
     window = 100
     if len(reward) >= window:
         roll_reward = np.convolve(reward, np.ones(window) / window, mode="valid")
+        roll_secrecy = np.convolve(r_sec, np.ones(window) / window, mode="valid")
         roll_ep = episodes[window - 1:]
         fig, ax = plt.subplots(figsize=(9, 4))
         ax.plot(roll_ep, roll_reward)
@@ -79,7 +89,7 @@ def plot_training_curves(csv_path: str, output_dir: str) -> dict:
         paths["rolling_reward_100"] = p
 
         fig, ax = plt.subplots(figsize=(9, 4))
-        ax.plot(roll_ep, np.convolve(r_sec, np.ones(window) / window, mode="valid"))
+        ax.plot(roll_ep, roll_secrecy)
         ax.set_xlabel("Episode")
         ax.set_ylabel(f"Rolling-{window} Secrecy (Mbps)")
         ax.set_title(f"Rolling-{window} Secrecy Rate")
@@ -89,6 +99,41 @@ def plot_training_curves(csv_path: str, output_dir: str) -> dict:
         fig.savefig(p, dpi=150)
         plt.close(fig)
         paths["rolling_secrecy_100"] = p
+
+        stable_ep = estimate_convergence_episode(r_sec, window=window)
+        fig, ax = plt.subplots(figsize=(9, 4.5))
+        ax.plot(episodes, r_sec, color="#7f7f7f", alpha=0.35, linewidth=0.8, label="Episode secrecy")
+        ax.plot(roll_ep, roll_secrecy, color="#1f77b4", linewidth=2.0, label=f"Rolling-{window}")
+        ax.axvline(stable_ep, color="#d62728", linestyle="--", linewidth=1.2,
+                   label=f"Approx. stable episode {stable_ep}")
+        ax.set_xlabel("Episode")
+        ax.set_ylabel("Secrecy Rate (Mbps)")
+        ax.set_title("Secrecy Convergence")
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=8)
+        fig.tight_layout()
+        p = str(out / "convergence_secrecy.png")
+        fig.savefig(p, dpi=150)
+        plt.close(fig)
+        paths["convergence_secrecy"] = p
+
+    elif len(r_sec) >= 2:
+        conv_window = min(100, len(r_sec))
+        roll_secrecy = np.convolve(r_sec, np.ones(conv_window) / conv_window, mode="valid")
+        roll_ep = episodes[conv_window - 1:]
+        fig, ax = plt.subplots(figsize=(9, 4.5))
+        ax.plot(episodes, r_sec, color="#7f7f7f", alpha=0.35, linewidth=0.8, label="Episode secrecy")
+        ax.plot(roll_ep, roll_secrecy, color="#1f77b4", linewidth=2.0, label=f"Rolling-{conv_window}")
+        ax.set_xlabel("Episode")
+        ax.set_ylabel("Secrecy Rate (Mbps)")
+        ax.set_title("Secrecy Convergence")
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=8)
+        fig.tight_layout()
+        p = str(out / "convergence_secrecy.png")
+        fig.savefig(p, dpi=150)
+        plt.close(fig)
+        paths["convergence_secrecy"] = p
 
     return paths
 

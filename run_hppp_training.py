@@ -10,6 +10,7 @@ from hppp_training_utils import (
     estimate_convergence_episode,
     generate_convergence_summary,
     plot_training_curves,
+    resolve_hppp_algorithm_dir,
 )
 
 OUTPUT_ROOT = Path("outputs/hppp_training")
@@ -101,6 +102,28 @@ def train_td3pg(episodes: int | None, device: str, channel_model: str = "rician"
     return train_td3pg(cfg, output_dir=out)
 
 
+def train_sca(episodes: int | None, device: str, channel_model: str = "rician") -> dict:
+    from SCA_study.train_sca import SCAConfig, train_sca
+
+    _ = device
+    n_ep = _smoke_cfg(episodes, 3000)
+    cfg = SCAConfig(episodes=n_ep, seed=42, fading_model=channel_model)
+    out = str(OUTPUT_ROOT / "SCA" / channel_model)
+    print(f"\n{'='*60}\nTraining SCA (HPPP) for {n_ep} episodes [{channel_model}]\n{'='*60}")
+    return train_sca(cfg, output_dir=out)
+
+
+def train_bcd(episodes: int | None, device: str, channel_model: str = "rician") -> dict:
+    from BCD_study.train_bcd import BCDConfig, train_bcd
+
+    _ = device
+    n_ep = _smoke_cfg(episodes, 3000)
+    cfg = BCDConfig(episodes=n_ep, seed=42, fading_model=channel_model)
+    out = str(OUTPUT_ROOT / "BCD" / channel_model)
+    print(f"\n{'='*60}\nTraining BCD (HPPP) for {n_ep} episodes [{channel_model}]\n{'='*60}")
+    return train_bcd(cfg, output_dir=out)
+
+
 ALGORITHMS = {
     "dqn": train_dqn,
     "ddpg": train_ddpg,
@@ -108,11 +131,14 @@ ALGORITHMS = {
     "ppo": train_ppo,
     "sac": train_sac,
     "td3pg": train_td3pg,
+    "sca": train_sca,
+    "bcd": train_bcd,
 }
 
 
 def _find_csv(output_root: Path, algo: str, channel: str) -> Path | None:
-    base = output_root / algo / channel
+    dir_name = resolve_hppp_algorithm_dir(algo)
+    base = output_root / dir_name / channel
     p = base / "training_log.csv"
     if p.exists():
         return p
@@ -173,7 +199,7 @@ def main():
             log_csv = _find_csv(OUTPUT_ROOT, name, channel)
         if log_csv:
             print(f"\n--- Processing {name} (CSV: {log_csv}) ---")
-            plots_out = OUTPUT_ROOT / name / channel / "plots"
+            plots_out = OUTPUT_ROOT / resolve_hppp_algorithm_dir(name) / channel / "plots"
             plots_out.mkdir(parents=True, exist_ok=True)
             plot_training_curves(str(log_csv), str(plots_out))
             rows = _read_csv(str(log_csv))

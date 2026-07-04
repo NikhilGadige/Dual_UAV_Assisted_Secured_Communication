@@ -84,4 +84,4 @@ def compute_jammer_gain(h: np.ndarray, w: np.ndarray) -> float:
     h : (1 x N_j)  MISO channel row
     w : (N_j x 1)  beamforming column
     """
-    return float(np.abs(h @ w) ** 2)
+    return float(np.abs(h @ w).item() ** 2)

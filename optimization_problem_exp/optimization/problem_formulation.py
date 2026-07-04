@@ -401,6 +401,7 @@ def compute_secrecy_rate(
     ris_phase_noise_std: float = 0.0,
     jammer_power_factor: float = 1.0,
     M_bs: int = 1,
+    phi_override: np.ndarray | None = None,
 ):
     """Compute secrecy rate per time slot and total.
 
@@ -421,6 +422,11 @@ def compute_secrecy_rate(
     ris_phase_noise_std: std of Gaussian phase noise added to RIS (rad).
     jammer_power_factor: scales the jammer transmit power (0..1).
     M_bs: number of BS antennas (1 = scalar w_bs, >1 = vector per slot).
+    phi_override: explicit RIS phase-shift decision variable, shape
+        (N_time, N_ris) in radians. When given, it takes precedence over
+        Phi / ris_alignment_alpha for every slot — this is the hook used
+        to let an external optimizer (e.g. an RL agent) actually control
+        phi_n instead of relying on the closed-form alignment heuristic.
 
     Returns dict with R_s_per_slot, R_s_total, SINR_user, SINR_eve,
     and average channel gain info.
@@ -488,7 +494,12 @@ def compute_secrecy_rate(
                 h_direct_e_list = [0j] * N_eve
 
         # RIS phase design with smooth alpha interpolation
-        if Phi is not None:
+        if phi_override is not None:
+            phi = phi_override[n]
+            if ris_phase_noise_std > 0.0:
+                phi = phi + np.random.normal(0.0, ris_phase_noise_std, N_ris)
+            Phi_local = compute_ris_reflection_matrix(phi)
+        elif Phi is not None:
             Phi_local = Phi
         elif ris_alignment_alpha >= 0.999:
             phi_aligned = design_ris_phases(h_BR, h_RU)

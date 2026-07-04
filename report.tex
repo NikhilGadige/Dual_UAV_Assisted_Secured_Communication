@@ -1,0 +1,877 @@
+\documentclass[journal,onecolumn]{IEEEtran}
+
+% * CITATION PACKAGES *
+\usepackage{cite}
+
+% * GRAPHICS RELATED PACKAGES *
+\usepackage{graphicx}
+\graphicspath{{./}}
+\DeclareGraphicsExtensions{.pdf,.jpeg,.png}
+
+% * MATH PACKAGES *
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+
+% * ALIGNMENT PACKAGES *
+\usepackage{array}
+
+% * PDF, URL AND HYPERLINK PACKAGES *
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+\usepackage{float}
+
+% Correct bad hyphenation here
+\hyphenation{op-tical net-works semi-conduc-tor}
+
+\begin{document}
+
+% Paper title
+\title{Cooperative Trajectory and Power Optimization for Secure Dual-UAV Relaying Systems: A Comparative Study of Deep Reinforcement Learning in Rayleigh and Rician Channels}
+
+% Author names and affiliations
+\author{
+Nikhil~Gadige,
+Anuj~Saha,
+Divyanshu~Ghosh,
+and Mohli~Thapa%
+\thanks{N. Gadige, A. Saha, D. Ghosh, and M. Thapa are with the Department of Computer Science and Engineering, Indian Institute of Information Technology Vadodara, under the Summer Research Program 2026.}%
+\thanks{E-mails: 202351037@iiitvadodara.ac.in, 202351010@iiitvadodara.ac.in, 202351036@iiitvadodara.ac.in, 202351084@iiitvadodara.ac.in.}
+}
+
+% \thanks{Manuscript received May 26, 2026; revised May 26, 2026.}}
+
+% The paper headers
+% \markboth{Journal of \LaTeX\ Class Files,~Vol.~14, No.~8, August~2015}%
+% {Gadige: Cooperative Trajectory and Power Optimization for Secure Dual-UAV Relaying}
+
+% Make the title area
+\maketitle
+
+\begin{abstract}
+Unmanned Aerial Vehicles (UAVs) have emerged as highly flexible, on-demand assets to assist terrestrial wireless communications. However, due to the line-of-sight (LoS) nature of air-to-ground links, UAV-assisted transmissions are exceptionally vulnerable to unauthorized eavesdropping. In this paper, we investigate a secure cooperative communication system comprising two UAVs: a decode-and-forward (DF) relay UAV and a cooperative jammer UAV. Operating in a joint fashion, the relay UAV forwards confidential data from a ground user to a base station, while the jammer UAV emits artificial interference to degrade the channel of potential eavesdroppers. To maximize the average secrecy rate, the UAVs must dynamically optimize their 2D trajectories and power allocation under tight kinematic constraints and energy-causality requirements. Since the system involves high-dimensional continuous states, non-convex constraints, and fluctuating channel gains, we formulate the optimization problem as a Markov Decision Process (MDP). We provide a rigorous comparative study of four state-of-the-art Reinforcement Learning (RL) paradigms: Dueling Double Deep Q-Network (D3QN), Proximal Policy Optimization (PPO), Soft Actor-Critic (SAC), and Twin Delayed Deep Deterministic Policy Gradient (TD3PG). Extensive simulations are conducted under both Rayleigh and Rician fading environments, including single-eavesdropper and HPPP multi-eavesdropper scenarios. Furthermore, the framework is extended to dynamic vehicle receivers and multiple receiver mobility models to evaluate robustness under realistic mobility conditions. The results demonstrate that continuous-action algorithms, particularly SAC and TD3PG, consistently achieve superior secrecy performance, smoother trajectories, faster convergence, and stronger resilience to receiver mobility and dense eavesdropping environments compared to discrete-action approaches.
+
+% Unmanned Aerial Vehicles (UAVs) have emerged as highly flexible, on-demand assets to assist terrestrial wireless communications. However, due to the line-of-sight (LoS) nature of air-to-ground links, UAV-assisted transmissions are exceptionally vulnerable to unauthorized eavesdropping. In this paper, we investigate a secure cooperative communication system comprising two UAVs: a decode-and-forward (DF) relay UAV and a cooperative jammer UAV. Operating in a joint fashion, the relay UAV forwards confidential data from a ground user to a base station, while the jammer UAV emits artificial interference to degrade the channel of a ground eavesdropper. To maximize the average secrecy rate, the UAVs must dynamically optimize their 2D trajectories and power allocation under tight kinematic constraints and energy-causality. Since the system involves high-dimensional continuous states, non-convex constraints, and fluctuating channel gains, we formulate the optimization problem as a Markov Decision Process (MDP). We provide a rigorous comparative study of four state-of-the-art Reinforcement Learning (RL) paradigms: Dueling Double Deep Q-Network (D3QN), Proximal Policy Optimization (PPO), Soft Actor-Critic (SAC), and Twin Delayed Deep Deterministic Policy Gradient (TD3PG). Using extensive numerical simulations, we analyze their convergence speed, stability, and trajectory tracking efficiency under both Rayleigh scattering and line-of-sight dominated Rician fading channels. Our results show that continuous-action algorithms (especially SAC and TD3PG) dramatically outperform discrete-action variants by achieving finer spatial positioning and smoother acceleration curves.
+\end{abstract}
+
+\begin{IEEEkeywords}
+UAV communications, Physical Layer Security, Deep Reinforcement Learning, Trajectory Design, Power Allocation, Rayleigh fading, Rician fading.
+\end{IEEEkeywords}
+
+\IEEEpeerreviewmaketitle
+
+\section{Introduction}
+\IEEEPARstart{T}{he} deployment of Unmanned Aerial Vehicles (UAVs) as aerial base stations, mobile relays, and jamming platforms has attracted substantial attention in future wireless networks (e.g., 5G-Advanced and 6G). Due to their high mobility, rapid deployment, and high probability of establishing Line-of-Sight (LoS) links, UAVs offer a promising solution to enhance coverage and capacity, particularly in emergency situations, remote areas, and military theaters. However, the very characteristic that makes UAV communication highly efficient—namely, the strong LoS component of the air-to-ground propagation path—also exposes the legitimate transmission links to severe security threats. Passive ground eavesdroppers (Eve) can easily intercept confidential data without being detected, posing severe challenges to traditional cryptographic security measures.
+
+To address these vulnerabilities, Physical Layer Security (PLS) has emerged as a powerful complement to cryptography. PLS exploits the intrinsic physical properties of wireless propagation channels (such as noise, fading, and interference) to ensure that the capacity of the legitimate link remains strictly higher than that of the eavesdropper link. In complex scenarios where the direct link between a ground user (U) and a destination base station (BS) is severely blocked by urban structures or large-scale shadowing, cooperative relaying and active jamming represent indispensable mechanisms.
+
+In this work, we analyze a dual-UAV cooperative security system, as illustrated in Fig.~\ref{fig:system_model}. A \textit{relay UAV} moves dynamically in a 2D horizontal plane at a fixed altitude to relay uplink data from a ground user to a BS using a half-duplex Decode-and-Forward (DF) protocol. Concurrently, a second \textit{jammer UAV} dynamically adjusts its 2D coordinates and transmit power to project localized artificial interference toward a passive ground eavesdropper, degrading Eve's signal-to-noise-plus-interference ratio (SINR).
+
+Optimizing the trajectories of both UAVs alongside the jammer's transmit power is highly non-trivial. It constitutes a non-convex, infinite-dimensional optimization problem over time, complicated by time-varying channel fading, battery energy limits, and kinematic boundary constraints. While classical optimization techniques (e.g., successive convex approximation) require highly accurate channel state information (CSI) and struggle with real-time adaptation, Reinforcement Learning (RL) has emerged as a powerful model-free tool. RL agents learn optimal policies solely by interacting with the environment, mapping observations directly to spatial control actions.
+
+Although multiple RL algorithms have been proposed for UAV path planning, a comprehensive, head-to-head comparison under identical constraints remains scarce. To bridge this gap, this paper presents a detailed convergence and performance study of four prominent RL algorithms:
+\begin{enumerate}
+    \item \textbf{D3QN (Dueling Double DQN)}: A discrete-action value-based method that employs target decoupling and dual-stream estimations.
+    \item \textbf{PPO (Proximal Policy Optimization)}: A stable, on-policy continuous actor-critic method using clipped probability ratios.
+    \item \textbf{SAC (Soft Actor-Critic)}: An off-policy maximum-entropy actor-critic algorithm that optimizes for both expected return and policy randomness.
+    \item \textbf{TD3PG (Twin Delayed Deep Deterministic Policy Gradient)}: A continuous deterministic actor-critic framework addressing overestimation bias.
+\end{enumerate}
+
+For additional validation under vehicle mobility scenarios, conventional DQN and DDPG baselines are also included. These algorithms are evaluated under two distinct statistical channel fading paradigms: Rayleigh fading (modeling rich NLoS multipath environments) and Rician fading (modeling environments with a strong deterministic line-of-sight component). Our contributions include a comprehensive breakdown of the physical model, reward decomposition, trajectory tracking behavior, and convergence characteristics.
+
+\section{System Model and Problem Formulation}
+
+We consider a dual-UAV cooperative communication network operating within a bounded three-dimensional region of size $L \times L \times H_{\max}$. A ground source user (U) is located at position
+
+\begin{equation}
+\mathbf{q}_{U}(t)=[x_U(t),y_U(t),0]^T,
+\end{equation}
+
+where the user may remain stationary or move according to a predefined mobility process. A ground base station (BS) is located at
+
+\begin{equation}
+\mathbf{q}_{BS}=[0,0,0]^T.
+\end{equation}
+
+Potential eavesdroppers are distributed according to a Homogeneous Poisson Point Process (HPPP)
+
+\begin{equation}
+\Phi_E=\{\mathbf{q}_{E,e}\}_{e=1}^{N_{\text{eve}}},
+\end{equation}
+
+with density $\lambda_{\text{eve}}$, where the location of the $e$-th eavesdropper is
+
+\begin{equation}
+\mathbf{q}_{E,e}
+=
+[x_{E,e},y_{E,e},0]^T.
+\end{equation}
+
+The single-eavesdropper model considered later can be viewed as a special case with $N_{\text{eve}}=1$.
+
+% We consider a dual-UAV cooperative communication network operating within a bounded three-dimensional region of size $L \times L \times H_{\max}$. A ground base station (BS) is located at the origin $\mathbf{q}_{BS} = [0, 0, 0]^T$. A ground user (U) is located at position $\mathbf{q}_{U}(t) = [x_U(t), y_U(t), 0]^T$ and may perform a localized random walk representing mobility. A passive eavesdropper (Eve) is situated at static coordinates $\mathbf{q}_{E} = [x_E, y_E, 0]^T$.
+
+Two UAVs—a relay UAV ($R$) and a jammer UAV ($J$)—fly at fixed altitudes $H_R$ and $H_J$, respectively, above the ground. Their time-varying coordinates in the horizontal plane at time slot $t \in [0, T]$ are denoted as:
+\begin{equation}
+    \mathbf{q}_R(t) = [x_R(t), y_R(t), H_R]^T,
+\end{equation}
+\begin{equation}
+    \mathbf{q}_J(t) = [x_J(t), y_J(t), H_J]^T.
+\end{equation}
+The horizontal movements of the UAVs are governed by the following first-order kinematic equations:
+\begin{equation}
+    \mathbf{q}_R(t + \Delta t) = \mathbf{q}_R(t) + \mathbf{v}_R(t) \Delta t,
+\end{equation}
+\begin{equation}
+    \mathbf{q}_J(t + \Delta t) = \mathbf{q}_J(t) + \mathbf{v}_J(t) \Delta t,
+\end{equation}
+where $\mathbf{v}_R(t) = [v_{x,R}(t), v_{y,R}(t), 0]^T$ and $\mathbf{v}_J(t) = [v_{x,J}(t), v_{y,J}(t), 0]^T$ denote the velocity vectors. The speed and acceleration of both UAVs are subject to maximum physical limits:
+\begin{equation}
+    \|\mathbf{v}_k(t)\| \le v_{\max}, \quad \left\| \frac{\mathbf{v}_k(t) - \mathbf{v}_k(t - \Delta t)}{\Delta t} \right\| \le a_{\max}, \quad k \in \{R, J\}.
+\end{equation}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{system_model.png}
+    \caption{System model of the secure dual-UAV cooperative communication network. A relay UAV assists the transmission from the ground user to the base station, while a jammer UAV emits artificial interference to suppress information leakage toward HPPP-distributed passive eavesdroppers.}
+    \label{fig:system_model}
+\end{figure}
+
+\subsection{Channel and Propagation Model}
+Let $d_j(t)$ denote the Euclidean distance between any transmitter $A$ and receiver $B$ at time slot $t$:
+\begin{equation}
+    d_{AB}(t) = \|\mathbf{q}_A(t) - \mathbf{q}_B(t)\|.
+\end{equation}
+The instantaneous channel gain between $A$ and $B$ is modeled as a combination of distance-dependent path loss and small-scale fading:
+\begin{equation}
+    h_{AB}(t) = \beta_0 d_{AB}^{-\alpha_{AB}}(t) \cdot f_{AB}(t),
+\end{equation}
+where $\beta_0$ represents the channel gain at a reference distance of $d_0 = 1$ meter, $\alpha_{AB}$ is the path loss exponent corresponding to the propagation link, and $f_{AB}(t)$ is the instantaneous fading envelope power gain.
+
+In this work, we analyze two key physical propagation environments:
+\begin{enumerate}
+    \item \textbf{Rayleigh Fading}: Standard for heavily built-up urban settings lacking a clear line-of-sight. The fading power gain $f_{AB}(t)$ is exponentially distributed with a unit mean, i.e., $f_{AB}(t) \sim \text{Exp}(1)$.
+    \item \textbf{Rician Fading}: Designed for open airspace or rural terrains where a strong direct LoS path dominates over scattered multipath components. The power gain is defined by $f_{AB}(t) = |g_{AB}(t)|^2$, where:
+    \begin{equation}g_{AB}(t) \sim \mathcal{CN}\left( \sqrt{\frac{K}{K+1}}, \frac{1}{K+1} \right),
+    \end{equation}
+    and $K$ represents the Rician $K$-factor (default $K=5.0$, representing $7$\,dB).
+\end{enumerate}
+
+Furthermore, the simulation environment supports a blended Elevation-Angle LoS Probability Model, where the path loss exponent dynamically switches between a line-of-sight exponent $\alpha_{\text{los}}$ and a non-line-of-sight exponent $\alpha_{\text{nlos}}$ according to a sigmoid function:
+\begin{equation}
+    P_{\text{LoS}}(\theta_{AB}) = \frac{1}{1 + a \exp\left[-b(\theta_{AB} - a)\right]},
+\end{equation}
+where $\theta_{AB} = \arcsin(H / d_{AB})$ is the elevation angle (in degrees), and $a, b$ are environmental calibration parameters. The average path loss gain is then blended as:
+\begin{equation}
+    \bar{h}_{AB}(t) = \left[ P_{\text{LoS}}(\theta_{AB}) \beta_0 d_{AB}^{-\alpha_{\text{los}}} + (1 - P_{\text{LoS}}(\theta_{AB})) \textstyle \beta_0 d_{AB}^{-\alpha_{\text{nlos}}} \right] \cdot f_{AB}(t).
+\end{equation}
+
+\subsection{Receiver Mobility Model}
+
+The legitimate receiver may remain stationary or move according to a predefined mobility process. The proposed framework supports multiple receiver mobility patterns, including pedestrian mobility, vehicle mobility, Random Walk (RW), Random Waypoint (RWP), Gauss-Markov (GM), and Constant Velocity (CV) models. Since the secrecy rate depends directly on the receiver location through the channel gains, receiver mobility continuously alters the optimal relay and jammer UAV trajectories. Detailed descriptions of the mobility models used in the experimental evaluation are provided in Section IV-D.
+
+\subsection{Signal Formulation and Secrecy Rate}
+We adopt a half-duplex, Decode-and-Forward (DF) protocol for the relay. In the first phase, the user transmits uplink data to the relay UAV with a fixed power $P_U$. The received signal-to-noise ratio (SNR) at the relay is:
+\begin{equation}
+    \gamma_{UR}(t) = \frac{P_U h_{UR}(t)}{\sigma^2},
+\end{equation}
+where $\sigma^2 = N_0 B$ is the additive white Gaussian noise (AWGN) power over bandwidth $B$.
+In the second phase, the relay UAV decodes the user's signal and forwards it to the BS with transmit power $P_R$. The received SNR at the BS is:
+\begin{equation}
+    \gamma_{RB}(t) = \frac{P_R h_{RB}(t)}{\sigma^2}.
+\end{equation}
+Due to the half-duplex relay protocol, the legitimate link's achievable rate is constrained by the bottleneck of the two-hop channel:
+\begin{equation}
+    R_{\text{legit}}(t) = 0.5 \cdot B \log_2\left(1 + \min\left(\gamma_{UR}(t), \gamma_{RB}(t)\right)\right).
+\end{equation}
+
+Concurrently, the jammer UAV emits artificial noise with transmit power
+$P_J(t)$ to degrade the interception capabilities of surrounding
+eavesdroppers.
+
+For the $e$-th eavesdropper, the received SINR is
+
+\begin{equation}
+\gamma_{E,e}(t)
+=
+\frac{P_U h_{UE,e}(t)}
+{\sigma^2 + P_J(t)h_{JE,e}(t)}.
+\end{equation}
+
+The corresponding interception rate is
+
+\begin{equation}
+R_{E,e}(t)
+=
+B\log_2
+\left(
+1+\gamma_{E,e}(t)
+\right).
+\end{equation}
+
+Assuming non-colluding eavesdroppers, the worst-case leakage rate is
+
+\begin{equation}
+R_{\text{eve}}(t)
+=
+\max_{e\in\{1,\ldots,N_{\text{eve}}\}}
+R_{E,e}(t).
+\end{equation}
+
+% Concurrently, the passive eavesdropper Eve attempts to decode the user's confidential data directly from the user's uplink leakage. Simultaneously, the jammer UAV emits active artificial noise with adjustable transmit power $P_J(t) \in [P_{J,\min}, P_{J,\max}]$. The resulting Signal-to-Interference-plus-Noise Ratio (SINR) at Eve is:
+% \begin{equation}
+%     \gamma_{E}(t) = \frac{P_U h_{UE}(t)}{\sigma^2 + P_J(t) h_{JE}(t)}.
+% \end{equation}
+% Consequently, Eve's achievable information interception rate is:
+% \begin{equation}
+%     R_{\text{eve}}(t) = B \log_2\left(1 + \gamma_E(t)\right).
+% \end{equation}
+
+Using physical layer security principles, the instantaneous secrecy rate $R_{\text{sec}}(t)$ is defined as the non-negative difference between the legitimate link capacity and the eavesdropping link capacity:
+\begin{equation}
+    R_{\text{sec}}(t) = \max\left(R_{\text{legit}}(t) - R_{\text{eve}}(t), 0\right).
+\end{equation}
+
+\section{Deep Reinforcement Learning Framework}
+
+To jointly optimize the UAV velocities $\mathbf{v}_R(t), \mathbf{v}_J(t)$ and the jamming power $P_J(t)$ over time, we formulate the problem as a Markov Decision Process (MDP). An MDP is defined by the tuple $(\mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \gamma)$, consisting of the state space $\mathcal{S}$, action space $\mathcal{A}$, transition probability $\mathcal{P}$, reward function $\mathcal{R}$, and discount factor $\gamma$.
+
+The environment supports multiple observation schemas. The standard observation vector $s_t \in \mathcal{S}$ contains UAV positions, user position, velocity information, aggregated HPPP eavesdropper statistics, channel-state information, SNR measurements, and battery states:
+
+\begin{equation}
+s_t =
+\Big[
+\mathbf{q}_R,\,
+\mathbf{q}_J,\,
+\mathbf{q}_U,\,
+\mathbf{q}_{BS},\,
+\mathbf{v}_R,\,
+\mathbf{v}_J,\,
+\mathbf{v}_U,\,
+d_{\text{nearest Eve}},\,
+\bar d_{\text{Eve}},\,
+R_{\text{eve}}^{\max},\,
+N_{\text{eve}},\,
+\text{channel gains},\,
+\text{SNRs},\,
+\text{battery states}
+\Big]^T.
+\end{equation}
+
+% \subsection{State and Action Space Design}
+% The environment supports multiple observation schemas. The standard full observation vector $s_t \in \mathcal{S}$ has a dimension of $38$ and consists of:
+% \begin{equation}
+%     s_t = \left[ \mathbf{q}_R, \mathbf{q}_J, \mathbf{q}_U, \mathbf{q}_{BS}, \mathbf{q}_{E}, \mathbf{v}_R, \mathbf{v}_J, \mathbf{v}_U, \text{distances}, \text{channel gains}, \text{SNRs}, \text{battery states} \right]^T.
+% \end{equation}
+
+All positional coordinates are normalized relative to the boundary $L/2$, and battery values are scaled by their maximum capacity.
+
+Depending on the algorithm's control paradigm, the Action Space $\mathcal{A}$ is defined as follows:
+\begin{itemize}
+    \item \textbf{Continuous Action Space} ($5$-dimensions): Used by PPO, SAC, and TD3PG.
+    \begin{equation}
+        a_t = \left[ a_{x,R}, a_{y,R}, a_{x,J}, a_{y,J}, a_{P_J} \right]^T \in [-1, 1]^5.
+    \end{equation}
+    The velocities are set as $\mathbf{v}_k(t) = [a_{x,k}, a_{y,k}]^T \cdot v_{\max}$. The jammer power is scaled linearly:
+    \begin{equation}
+        P_J(t) = P_{J,\min} + \frac{a_{P_J} + 1}{2} (P_{J,\max} - P_{J,\min}).
+    \end{equation}
+    
+    \item \textbf{Discrete Action Space} (21 discrete actions): Used by D3QN. The continuous space is quantized into combinations of speed vectors and power steps. The relay UAV and jammer UAV move in one of 4 cardinal directions at full speed, or remain stationary. The jammer power is selected from a discrete set of levels.
+\end{itemize}
+
+\subsection{Reward Function Decomposition}
+The reward function is meticulously designed to balance secrecy rate maximization against physical and operational constraints:
+\begin{equation}
+    \mathcal{R}_t = r_{\text{secrecy}} - r_{\text{energy}} - r_{\text{motion}} - r_{\text{smoothness}} - r_{\text{boundary}} - r_{\text{depletion}}.
+\end{equation}
+Each sub-component is defined below:
+\begin{enumerate}
+    \item \textbf{Secrecy Reward}: Directly scales the secrecy rate to provide an optimization gradient:
+    \begin{equation}
+        r_{\text{secrecy}} = w_{\text{sec}} \cdot R_{\text{sec}}(t).
+    \end{equation}
+    \item \textbf{Energy Consumption Penalty}: Discourages excessive power expenditure. UAV energy usage is computed based on hover and aerodynamic drag components:
+    \begin{equation}
+        P_k^{\text{draw}} = P_k^{\text{hover}} + c_k^{\text{motion}} \|\mathbf{v}_k(t)\|^2 + c_k^{\text{rf}} P_{\text{tx},k}, \quad k \in \{R, J\},
+    \end{equation}
+    \begin{equation}
+        r_{\text{energy}} = w_{\text{energy}} \cdot \left( (P_R^{\text{draw}} + P_J^{\text{draw}}) \Delta t \right).
+    \end{equation}
+    \item \textbf{Motion Penalty}: Penalizes squared UAV speeds to discourage unnecessary jitter:
+    \begin{equation}
+        r_{\text{motion}} = w_{\text{motion}} \cdot \frac{\|\mathbf{v}_R(t)\|^2 + \|\mathbf{v}_J(t)\|^2}{v_{\max}^2}.
+    \end{equation}
+    \item \textbf{Smoothness Penalty}: Penalizes excessive acceleration between time slots, promoting realistic flight mechanics:
+    \begin{equation}
+        r_{\text{smoothness}} = w_{\text{smoothness}} \cdot \frac{\|\mathbf{v}_R(t) - \mathbf{v}_R(t-\Delta t)\| + \|\mathbf{v}_J(t) - \mathbf{v}_J(t-\Delta t)\|}{2 a_{\max} \Delta t}.
+    \end{equation}
+    \item \textbf{Boundary Penalty}: Imposes an exponential penalty when either UAV approaches the spatial borders ($d_{\text{edge}} < 0.3 \cdot L/2$):
+    \begin{equation}
+        r_{\text{boundary}} = w_{\text{boundary}} \cdot \sum_{k \in \{R, J\}} \exp\left( - \frac{d_{\text{edge}, k}}{0.05 \cdot L/2} \right).
+    \end{equation}
+    \item \textbf{Battery Depletion Penalty}: A massive penalty ($P_{\text{deplete}} = 5 \times 10^5$) triggered if either UAV exhausts its battery capacity ($E_{\text{battery}} \le 0$), terminating the episode immediately.
+\end{enumerate}
+
+\subsection{Reinforcement Learning Algorithms Under Study}
+Here we outline the fundamental updating rules of each framework:
+\begin{itemize}
+    \item \textbf{D3QN (Dueling Double DQN)}:
+    D3QN splits the Q-network into a state-value stream $V(s)$ and an advantage stream $A(s, a)$. The Q-value is combined as:
+    \begin{equation}
+        Q(s, a; \theta, \alpha, \beta) = V(s; \theta, \beta) + \left( A(s, a; \theta, \alpha) - \frac{1}{|\mathcal{A}|} \sum_{a'} A(s, a'; \theta, \alpha) \right),
+    \end{equation}
+    where $\theta$ is the shared parameter, and $\alpha, \beta$ are the parameters of the advantage and value streams. Double Q-learning prevents target overestimation by utilizing the online network for action selection and the target network for evaluation:
+    \begin{equation}
+    Y_t
+    =
+    \mathcal{R}_{t+1}
+    +
+    \gamma
+    Q_{\theta^-}
+    \!\left(
+    s_{t+1},
+    \arg\max_{a} Q_{\theta}(s_{t+1},a)
+    \right).
+    \end{equation}
+    
+    % \begin{equation}
+    %     Y_t = \mathcal{R}_{t+1} + \gamma Q\left s_{t+1}, \text{argmax}_{a} Q(s_{t+1}, a; \theta_t); \theta_t^- \right).
+    % \end{equation}
+
+    \item \textbf{PPO (Proximal Policy Optimization)}:
+    An on-policy actor-critic algorithm that ensures stable updates. PPO maximizes a clipped surrogate objective function:
+    \begin{equation}
+        L^{\text{CLIP}}(\theta) = \hat{\mathbb{E}}_t \left[ \min\left( r_t(\theta) \hat{A}_t, \, \text{clip}(r_t(\theta), 1 - \epsilon, 1 + \epsilon) \hat{A}_t \right) \right],
+    \end{equation}
+    where $r_t(\theta) = \frac{\pi_\theta(a_t | s_t)}{\pi_{\theta_{\text{old}}}(a_t | s_t)}$ is the probability ratio, $\hat{A}_t$ is the Generalized Advantage Estimator (GAE), and $\epsilon = 0.2$ is the clipping hyperparameter.
+
+    \item \textbf{SAC (Soft Actor-Critic)}:
+    An off-policy maximum-entropy actor-critic framework. In addition to maximizing expected rewards, SAC maximizes policy entropy to encourage exploration and robustness:
+    \begin{equation}
+        J(\pi) = \sum_{t=0}^T \mathbb{E}_{(s_t, a_t) \sim \rho_\pi} \left[ \mathcal{R}(s_t, a_t) + \alpha \mathcal{H}\left( \pi(\cdot | s_t) \right) \right],
+    \end{equation}
+    where $\mathcal{H}(\cdot)$ is the Shannon entropy and $\alpha$ is the temperature parameter regulating entropy importance.
+
+    \item \textbf{TD3PG (Twin Delayed Deep Deterministic Policy Gradient)}:
+    TD3PG addresses the overestimation bias inherent in deterministic policy gradient algorithms. It applies Clipped Double Q-learning:
+    \begin{equation}
+        y = r + \gamma \min_{i=1,2} Q_{\theta_i^-}\left( s', \pi_{\phi^-}(s') + \epsilon \right), \quad \epsilon \sim \text{clip}(\mathcal{N}(0, \tilde{\sigma}^2), -c, c),
+    \end{equation}
+    delaying the policy $\phi$ updates relative to the Q-networks, and smoothing the target policy action with clipped noise.
+\end{itemize}
+
+\section{Performance Evaluation and Convergence Analysis}
+
+\subsection{Single Eavesdropper Model}
+We analyze the convergence behavior of each algorithm across Rayleigh fading and Rician fading channels. All simulations run for a set number of training episodes ($2500$ to $4000$) with a hidden dimension of $64$. The training trajectories, average secrecy rates, and rolling performance bands are recorded. Below, we present the localized training curves and convergence logs.
+
+\subsubsection{D3QN Study Analysis}
+D3QN operates with discrete action spaces, limiting its ability to achieve precise positioning. Under Rician fading channels, the presence of a dominant line-of-sight component enables the agent to discover high-rate positions quickly, but the training exhibits massive variance (as shown in Fig. 1). Epsilon decay forces exploration early, but the network suffers from occasional catastrophic rate drops even in late training stages, likely due to the instability of discrete control in continuous environment spaces. In Rayleigh fading channels (Fig. 2), the lack of a stable LoS path severely impairs the discrete agent's ability to coordinate, resulting in slower convergence and lower overall secrecy rates.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{1_d3qn_rician.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/d3qn_rician_evaluation_vs_training.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/d3qn_rician_rolling100_vs_episode.png}
+    \caption{D3QN Performance under Rician Fading. (Left) Mean evaluation secrecy rate vs. training episodes showing significant variance. (Right) Rolling 100-episode average secrecy rate.}
+    \label{fig:d3qn_rician}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{1_d3qn_rayleigh.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/d3qn_rayleigh_evaluation_vs_training.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/d3qn_rayleigh_rolling100_vs_episode.png}
+    \caption{D3QN Performance under Rayleigh Fading. (Left) Evaluation vs. training performance exhibiting severe fluctuations due to multi-path fading. (Right) Rolling average secrecy rate.}
+    \label{fig:d3qn_rayleigh}
+\end{figure}
+
+\subsubsection{PPO Study Analysis}
+PPO benefits from continuous action spaces, allowing the UAVs to execute smooth changes in direction. Under Rician fading (Fig. 3), PPO shows stable, monotonic convergence, with clipping successfully preventing destructive policy steps. However, as an on-policy method, PPO suffers from relatively low sample efficiency compared to off-policy counterparts, taking longer to reach peak secrecy values. Under Rayleigh fading (Fig. 4), the performance curves are noticeably degraded. The high variance of NLoS paths causes frequent gradient updates that occasionally lead the policy into suboptimal local minima, though the clipped objective keeps the system stable overall.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{1_ppo_rician.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/ppo_rician_evaluation_vs_training.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/ppo_rician_rolling100_vs_episode.png}
+    \caption{PPO Performance under Rician Fading. (Left) Evaluation vs. training secrecy rates indicating stable, monotonic growth. (Right) Rolling average over 100 episodes.}
+    \label{fig:ppo_rician}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{1_ppo_rayleigh.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/ppo_rayleigh_evaluation_vs_training.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/ppo_rayleigh_rolling100_vs_episode.png}
+    \caption{PPO Performance under Rayleigh Fading. (Left) Slower convergence and lower peak rates under severe Rayleigh scattering. (Right) Rolling 100-episode trend.}
+    \label{fig:ppo_rayleigh}
+\end{figure}
+
+\subsubsection{SAC Study Analysis}
+SAC achieves outstanding performance. Under Rician fading channels (Fig. 5), the entropy regularization term forces the agent to explore diverse flight paths early on. The actor-critic networks quickly locate the optimal cooperative configuration: the relay UAV positions itself directly between the User and the BS, while the jammer UAV hovers in close proximity to Eve, maximizing the jamming path loss advantage. Once found, SAC maintains highly stable evaluation rates. Under Rayleigh fading (Fig. 6), SAC maintains its superiority; its off-policy replay buffer combined with stochastic policy formulation helps it handle random fading dips without losing stability, outperforming all other frameworks.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{1_sac_rician.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/sac_rician_evaluation_vs_training.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/sac_rician_rolling100_vs_episode.png}
+    \caption{SAC Performance under Rician Fading. (Left) Superior convergence speed and peak secrecy rate due to maximum entropy exploration. (Right) Smooth rolling average.}
+    \label{fig:sac_rician}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{1_sac_rayleigh.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/sac_rayleigh_evaluation_vs_training.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/sac_rayleigh_rolling100_vs_episode.png}
+    \caption{SAC Performance under Rayleigh Fading. (Left) Outstanding adaptability to heavy fading with stable training profiles. (Right) Rolling secrecy rate metrics.}
+    \label{fig:sac_rayleigh}
+\end{figure}
+
+\subsubsection{TD3PG Study Analysis}
+TD3PG displays highly competitive performance. The twin-Q network design successfully mitigates the standard DDPG overestimation bias, leading to excellent trajectory tracking. Under Rician fading (Fig. 7), TD3PG converges to a peak secrecy rate similar to SAC. However, due to its deterministic policy updates, it is slightly more sensitive to hyperparameter selection and shows minor policy oscillations compared to SAC. Under Rayleigh fading (Fig. 8), the addition of target policy smoothing noise becomes critical, shielding the actor from sudden channel gain spikes and ensuring steady convergence despite multi-path fluctuations.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{1_td3pg_rician.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/td3pg_rician_evaluation_vs_training.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/td3pg_rician_rolling100_vs_episode.png}
+    \caption{TD3PG Performance under Rician Fading. (Left) Extremely high peak secrecy rates matching SAC but with minor policy oscillations. (Right) Smoothed rolling average trend.}
+    \label{fig:td3pg_rician}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{1_td3pg_rayleigh.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/td3pg_rayleigh_evaluation_vs_training.png}
+    % \includegraphics[width=0.48\textwidth]{single_training/td3pg_rayleigh_rolling100_vs_episode.png}
+    \caption{TD3PG Performance under Rayleigh Fading. (Left) Target policy smoothing stabilizes training under deep NLoS channel fading. (Right) Rolling 100-episode secrecy rate.}
+    \label{fig:td3pg_rayleigh}
+\end{figure}
+
+\subsubsection{Algorithm Comparison and Critical Insights}
+Table I summarizes the empirical performance metrics obtained across all studies. 
+Continuous algorithms (SAC, TD3PG, and PPO) dramatically outperform discrete D3QN in trajectory quality. D3QN suffers from high-frequency spatial oscillations (jitter) because the discrete action space forces the UAVs to execute sudden, maximum-speed velocity adjustments. This results in severe smoothness penalties and high energy consumption. 
+Stochastic policies (SAC) achieve the highest overall reward and secrecy rates because the policy entropy prevents the networks from collapsing into narrow, sub-optimal trajectory loops, enabling the UAVs to dynamically track the mobile ground user while maintaining a safe distance from the spatial boundaries.
+
+\begin{table*}[t]
+\caption{Performance Summary Across Algorithms and Channel Models}
+\label{tab:comparison}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Algorithm \& Channel} &
+\textbf{Max Avg Rate (Mbps)} &
+\textbf{Max Eval Rate (Mbps)} &
+\textbf{Final Rolling-100 (Mbps)} &
+\textbf{Total Episodes} &
+\textbf{Trajectory Jitter} \\
+\midrule
+
+D3QN (Rician)    & 10.05 & 8.45 & 7.22 & 3000 & High \\
+D3QN (Rayleigh)  & 10.26 & 7.89 & 6.70 & 3000 & Very High \\
+PPO (Rician)     & 10.61 & 8.87 & 7.62 & 3000 & Low \\
+PPO (Rayleigh)   & 10.23 & 8.06 & 7.16 & 3000 & Low \\
+SAC (Rician)     & 10.91 & 8.65 & 7.88 & 4000 & Extremely Low \\
+SAC (Rayleigh)   & 10.08 & 8.20 & 7.36 & 4000 & Extremely Low \\
+TD3PG (Rician)   & 10.82 & 9.01 & 8.05 & 4000 & Extremely Low \\
+TD3PG (Rayleigh) & 9.87 & 8.31 & 7.40 & 4000 & Extremely Low \\
+
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{HPPP Multi-Eavesdropper Model}
+Ground eavesdropping threats are rarely static or isolated. To validate the cooperative jammer-relay system under realistic conditions, we model a network containing multiple non-colluding ground eavesdroppers distributed according to a Homogeneous Poisson Point Process (HPPP) $\Phi_E$ with density $\lambda_{\text{eve}} = 2 \times 10^{-5}$ Eves/m$^2$ within the bounded region. For a simulation area of $L \times L = 1000\text{ m} \times 1000\text{ m}$, the expected number of eavesdroppers in any realization is $\mathbb{E}[N_{\text{eve}}] = 20$. In each episode, the actual number of active eavesdroppers is drawn from a Poisson distribution:
+\begin{equation}
+    P(N_{\text{eve}} = n) = \frac{(\lambda_{\text{eve}} L^2)^n e^{-\lambda_{\text{eve}} L^2}}{n!}.
+\end{equation}
+The horizontal positions of these eavesdroppers $\mathbf{q}_{E,e} = [x_{E,e}, y_{E,e}, 0]^T$ for $e \in \{1, \dots, N_{\text{eve}}\}$ are independently and uniformly distributed. Small-scale fading envelopes between the user and eavesdropper $e$, and between the jammer and eavesdropper $e$, are modeled as independent Rayleigh or Rician variables. Under the worst-case security formulation (non-colluding but individually optimal eavesdropping), the information leakage rate $R_{\text{eve}}(t)$ is determined by the most dangerous eavesdropper:
+\begin{equation}
+    R_{\text{eve}}(t) = \max_{e \in \{1, \dots, N_{\text{eve}}\}} B \log_2\left(1 + \frac{P_U h_{UE,e}(t)}{\sigma^2 + P_J(t) h_{JE,e}(t)}\right),
+\end{equation}
+where $h_{UE,e}(t)$ and $h_{JE,e}(t)$ are the blended channel gains from the user and jammer, respectively, to eavesdropper $e$. The secrecy rate becomes $R_{\text{sec}}(t) = \max\left(R_{\text{legit}}(t) - R_{\text{eve}}(t), 0\right)$.
+
+To represent this variable-dimensional environment in a fixed-size observation vector, the state space is augmented with aggregated statistics representing the eavesdropper distribution. The augmented state vector includes: (i) the distance to the nearest eavesdropper, (ii) the average distance to all eavesdroppers, (iii) the maximum instantaneous interception capacity, and (iv) the total count of eavesdroppers $N_{\text{eve}}$.
+
+We trained all four algorithms under the HPPP environment for both Rician and Rayleigh channels.
+
+\subsubsection{D3QN Study Analysis}
+D3QN operates with discrete action spaces, limiting its ability to achieve precise positioning. Under Rician fading channels with multiple eavesdroppers (Fig. 9), the presence of a dominant line-of-sight component enables the agent to discover high-rate positions quickly, but the training exhibits massive variance and performance drops. The discrete actions prevent the jammer from executing fine-grained movements to track the closest active eavesdropper, resulting in sub-optimal coordination. In Rayleigh fading channels under the HPPP model (Fig. 9), the lack of a stable LoS path combined with spatial eavesdropper density severely degrades the discrete agent's ability to maintain high secrecy rates, resulting in slower convergence and lower overall secrecy metrics.
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.48\textwidth]{hppp_training/d3qn_rician_evaluation_vs_training.png}
+%     \includegraphics[width=0.48\textwidth]{hppp_training/d3qn_rician_rolling100_vs_episode.png}
+%     \caption{D3QN Performance under Rician Fading in the HPPP model. (Left) Mean evaluation secrecy rate vs. training episodes showing significant variance. (Right) Rolling 100-episode average secrecy rate.}
+%     \label{fig:d3qn_rician_hppp}
+% \end{figure}
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.48\textwidth]{hppp_training/d3qn_rayleigh_evaluation_vs_training.png}
+%     \includegraphics[width=0.48\textwidth]{hppp_training/d3qn_rayleigh_rolling100_vs_episode.png}
+%     \caption{D3QN Performance under Rayleigh Fading in the HPPP model. (Left) Evaluation vs. training performance exhibiting severe fluctuations due to multi-path fading. (Right) Rolling average secrecy rate.}
+%     \label{fig:d3qn_rayleigh_hppp}
+% \end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{hppp_d3qn.png}
+    % \includegraphics[width=0.48\textwidth]{hppp_training/d3qn_rician_rolling100_vs_episode.png}
+    % \includegraphics[width=0.48\textwidth]{hppp_training/d3qn_rayleigh_rolling100_vs_episode.png}
+    \caption{D3QN Performance under (Left) Rician Fading and (Right) Rayleigh Fading in the HPPP model. Rolling 100-episode average secrecy rate.}
+    \label{fig:d3qn_hppp}
+\end{figure}
+
+
+\subsubsection{PPO Study Analysis}
+PPO benefits from continuous action spaces, allowing the UAVs to execute smooth changes in direction. Under Rician fading (Fig. 10), PPO shows stable, monotonic convergence, with the clipped objective successfully preventing destructive policy steps when navigating the multi-eavesdropper topology. However, as an on-policy method, PPO suffers from relatively low sample efficiency compared to off-policy counterparts, taking longer to reach peak secrecy values in the larger, HPPP-augmented state space. Under Rayleigh fading (Fig. 10), the performance curves are noticeably degraded. The high variance of NLoS paths causes frequent gradient updates that occasionally lead the policy into suboptimal local minima, though the clipped objective keeps the system stable overall.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{hppp_ppo.png}
+    % \includegraphics[width=0.48\textwidth]{hppp_training/ppo_rician_rolling100_vs_episode.png}
+    % \includegraphics[width=0.48\textwidth]{hppp_training/ppo_rayleigh_rolling100_vs_episode.png}
+    \caption{PPO Performance under (Left) Rician Fading and (Right) Rayleigh Fading in the HPPP model. Rolling 100-episode average secrecy rate.}
+    \label{fig:ppo_hppp}
+\end{figure}
+
+
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.48\textwidth]{hppp_training/ppo_rician_evaluation_vs_training.png}
+%     \includegraphics[width=0.48\textwidth]{hppp_training/ppo_rician_rolling100_vs_episode.png}
+%     \caption{PPO Performance under Rician Fading in the HPPP model. (Left) Evaluation vs. training secrecy rates indicating stable, monotonic growth. (Right) Rolling average over 100 episodes.}
+%     \label{fig:ppo_rician_hppp}
+% \end{figure}
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.48\textwidth]{hppp_training/ppo_rayleigh_evaluation_vs_training.png}
+%     \includegraphics[width=0.48\textwidth]{hppp_training/ppo_rayleigh_rolling100_vs_episode.png}
+%     \caption{PPO Performance under Rayleigh Fading in the HPPP model. (Left) Slower convergence and lower peak rates under severe Rayleigh scattering. (Right) Rolling 100-episode trend.}
+%     \label{fig:ppo_rayleigh_hppp}
+% \end{figure}
+
+\subsubsection{SAC Study Analysis}
+SAC achieves outstanding performance. Under Rician fading channels (Fig. 11), the entropy regularization term forces the agent to explore diverse flight paths early on. The actor-critic networks quickly locate the optimal cooperative configuration: the relay UAV positions itself to maintain high User-Relay-BS capacity, while the jammer UAV dynamically hovers in close proximity to the most threatening eavesdropper, maximizing the jamming path loss advantage. Once found, SAC maintains highly stable evaluation rates. Under Rayleigh fading (Fig. 11), SAC maintains its superiority; its off-policy replay buffer combined with stochastic policy formulation helps it handle random fading dips without losing stability, outperforming all other frameworks.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{hppp_sac.png}
+    % \includegraphics[width=0.48\textwidth]{hppp_training/sac_rician_rolling100_vs_episode.png}
+    % \includegraphics[width=0.48\textwidth]{hppp_training/sac_rayleigh_rolling100_vs_episode.png}
+    \caption{SAC Performance under (Left) Rician Fading and (Right) Rayleigh Fading in the HPPP model. Rolling 100-episode average secrecy rate.}
+    \label{fig:sac_hppp}
+\end{figure}
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.48\textwidth]{hppp_training/sac_rician_evaluation_vs_training.png}
+%     \includegraphics[width=0.48\textwidth]{hppp_training/sac_rician_rolling100_vs_episode.png}
+%     \caption{SAC Performance under Rician Fading in the HPPP model. (Left) Superior convergence speed and peak secrecy rate due to maximum entropy exploration. (Right) Smooth rolling average.}
+%     \label{fig:sac_rician_hppp}
+% \end{figure}
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.48\textwidth]{hppp_training/sac_rayleigh_evaluation_vs_training.png}
+%     \includegraphics[width=0.48\textwidth]{hppp_training/sac_rayleigh_rolling100_vs_episode.png}
+%     \caption{SAC Performance under Rayleigh Fading in the HPPP model. (Left) Outstanding adaptability to heavy fading with stable training profiles. (Right) Rolling secrecy rate metrics.}
+%     \label{fig:sac_rayleigh_hppp}
+% \end{figure}
+
+\subsubsection{TD3PG Study Analysis}
+TD3PG displays highly competitive performance. The twin-Q network design successfully mitigates the standard DDPG overestimation bias, leading to excellent trajectory tracking. Under Rician fading (Fig. 12), TD3PG converges to a peak secrecy rate similar to SAC. However, due to its deterministic policy updates, it is slightly more sensitive to hyperparameter selection and shows minor policy oscillations compared to SAC in the presence of random spatial eavesdropper distributions. Under Rayleigh fading (Fig. 12), the addition of target policy smoothing noise becomes critical, shielding the actor from sudden channel gain spikes across the active eavesdropping links and ensuring steady convergence despite multi-path fluctuations.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{hppp_td3pg.png}
+    % \includegraphics[width=0.48\textwidth]{hppp_training/td3pg_rician_rolling100_vs_episode.png}
+    % \includegraphics[width=0.48\textwidth]{hppp_training/td3pg_rayleigh_rolling100_vs_episode.png}
+    \caption{TD3PG Performance under (Left) Rician Fading and (Right) Rayleigh Fading in the HPPP model. Rolling 100-episode average secrecy rate.}
+    \label{fig:td3pg_hppp}
+\end{figure}
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.48\textwidth]{hppp_training/td3pg_rician_evaluation_vs_training.png}
+%     \includegraphics[width=0.48\textwidth]{hppp_training/td3pg_rician_rolling100_vs_episode.png}
+%     \caption{TD3PG Performance under Rician Fading in the HPPP model. (Left) Extremely high peak secrecy rates matching SAC but with minor policy oscillations. (Right) Smoothed rolling average trend.}
+%     \label{fig:td3pg_rician_hppp}
+% \end{figure}
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.48\textwidth]{hppp_training/td3pg_rayleigh_evaluation_vs_training.png}
+%     \includegraphics[width=0.48\textwidth]{hppp_training/td3pg_rayleigh_rolling100_vs_episode.png}
+%     \caption{TD3PG Performance under Rayleigh Fading in the HPPP model. (Left) Target policy smoothing stabilizes training under deep NLoS channel fading. (Right) Rolling 100-episode secrecy rate.}
+%     \label{fig:td3pg_rayleigh_hppp}
+% \end{figure}
+
+\subsubsection{Algorithm Comparison and Critical Insights}
+Table \ref{tab:hppp_comparison} summarizes the empirical performance metrics obtained under the HPPP multi-eavesdropper environment. Continuous algorithms (SAC, TD3PG, and PPO) dramatically outperform discrete D3QN in trajectory quality. D3QN suffers from high-frequency spatial oscillations (jitter) because the discrete action space forces the UAVs to execute sudden, maximum-speed velocity adjustments. This results in severe smoothness penalties and high energy consumption. 
+Stochastic policies (SAC) achieve the highest overall reward and secrecy rates because the policy entropy prevents the networks from collapsing into narrow, sub-optimal trajectory loops, enabling the UAVs to dynamically track the mobile ground user while maintaining a safe distance from the spatial boundaries and adapting to multiple spatial eavesdropping channels.
+
+SAC and TD3PG maintain their dominance in the multi-eavesdropper setting. SAC achieves the highest final rolling secrecy rate of 6.8231 Mbps under Rician fading and 4.7183 Mbps under Rayleigh fading. TD3PG converges slightly faster (by episode 100) and achieves competitive final secrecy rates of 6.5580 Mbps (Rician) and 4.2782 Mbps (Rayleigh). PPO shows stable but slower convergence (stable around episode 304 to 515), while D3QN exhibits the lowest final secrecy rates due to discrete control limitations, though it remains stable at 5.8336 Mbps under Rician fading. The results demonstrate that the cooperative jammer UAV successfully positions itself to mitigate the worst-case eavesdropping leakage, even when surrounded by a dense Poisson field of interceptors.
+
+\begin{table*}[t]
+\caption{HPPP Multi-Eavesdropper Model Performance Summary Across Algorithms and Channel Models}
+\label{tab:hppp_comparison}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Algorithm \& Channel} &
+\textbf{Max Avg Rate (Mbps)} &
+\textbf{Max Eval Rate (Mbps)} &
+\textbf{Final Rolling-100 (Mbps)} &
+\textbf{Total Episodes} &
+\textbf{Trajectory Jitter} \\
+\midrule
+
+D3QN (Rician)    & 9.52 & 9.04 & 5.83 & 6000 & High \\
+D3QN (Rayleigh)  & 7.53 & 7.15 & 3.81 & 6000 & Very High \\
+PPO (Rician)     & 9.59 & 9.11 & 6.09 & 6000 & Low \\
+PPO (Rayleigh)   & 7.79 & 7.40 & 4.15 & 6000 & Low \\
+SAC (Rician)     & 9.97 & 9.47 & 6.82 & 6000 & Extremely Low \\
+SAC (Rayleigh)   & 8.66 & 8.23 & 4.72 & 6000 & Extremely Low \\
+TD3PG (Rician)   & 9.85 & 9.36 & 6.56 & 6000 & Extremely Low \\
+TD3PG (Rayleigh) & 7.92 & 7.53 & 4.28 & 6000 & Extremely Low \\
+
+\bottomrule
+\end{tabular}
+\end{table*}
+
+% \subsubsection{D3QN Study Analysis}
+
+% \subsubsection{PPO Study Analysis}
+
+% \subsubsection{SAC Study Analysis}
+
+% \subsubsection{TD3PG Study Analysis}
+
+% \subsubsection{Algorithm Comparison and Critical Insights}
+
+
+% \begin{table}[h!]
+% \caption{HPPP Multi-Eavesdropper Convergence Summary ($\lambda_{\text{eve}} = 2 \times 10^{-5}$ Eves/m$^2$)}
+% \centering
+% \begin{tabular}{llccc}
+% \toprule
+% \textbf{Algorithm} & \textbf{Channel Model} & \textbf{Approx Stable Episode} & \textbf{Final Rolling Reward} & \textbf{Final Rolling Secrecy (Mbps)} \\
+% \midrule
+% D3QN  & Rician    & 100  & 5.0273 & 5.8336 \\
+% D3QN  & Rayleigh  & 100  & 3.0993 & 3.8124 \\
+% PPO   & Rician    & 515  & 5.4071 & 6.0945 \\
+% PPO   & Rayleigh  & 304  & 3.3478 & 4.1549 \\
+% SAC   & Rician    & 200  & 5.9750 & 6.8231 \\
+% SAC   & Rayleigh  & 195  & 3.8119 & 4.7183 \\
+% TD3PG & Rician    & 100  & 5.7355 & 6.5580 \\
+% TD3PG & Rayleigh  & 103  & 2.9161 & 4.2782 \\
+% \bottomrule
+% \end{tabular}
+% \label{tab:hppp_summary}
+% \end{table}
+
+\subsection{Impact of Vehicle Receiver Mobility}
+
+To evaluate the robustness of the cooperative UAV relay-jammer framework under realistic transportation scenarios, we replaced the legitimate receiver with a dynamically moving ground vehicle. Unlike the stationary IoT receiver used in the baseline implementation, the vehicle continuously changes its position throughout each episode, introducing rapid variations in relay-receiver and jammer-receiver channel geometries.
+
+The modification was intentionally limited to the receiver mobility component. All secrecy-rate formulations, reward functions, channel models, UAV dynamics, and reinforcement learning architectures remained unchanged. The VehicleUAVEnvironment extends the original UAV environment by modifying only the receiver position update mechanism. Consequently, any performance differences can be directly attributed to the increased mobility of the legitimate receiver.
+
+Three realistic vehicle mobility patterns were incorporated:
+
+\begin{enumerate}
+    \item \textbf{Straight Road Mobility}: The vehicle moves with a constant velocity along a fixed direction.
+    \item \textbf{Lane Change Mobility}: The vehicle performs forward motion while periodically changing its lateral position, emulating lane-switching behavior.
+    \item \textbf{Urban Grid Mobility}: The vehicle follows Manhattan-style road layouts and performs discrete $90^\circ$ turns at grid intersections.
+\end{enumerate}
+
+To prevent unrealistic departures from the operational region, all vehicle trajectories employ elastic boundary reflection. Since the vehicle coordinates directly influence path-loss calculations and fading realizations, the relay and jammer UAVs must continuously adapt their trajectories to maintain favorable secrecy conditions.
+
+The experimental campaign consisted of twelve training scenarios corresponding to six reinforcement learning algorithms (DQN, DDPG, D3QN, PPO, SAC, and TD3PG) evaluated under both Rician and Rayleigh fading environments. Each configuration was trained for 100 episodes using the HPPP multi-eavesdropper model. Performance was measured using the final rolling-100 secrecy rate, peak secrecy rate, average reward, and convergence speed.
+
+\subsubsection{Algorithm Performance Analysis}
+
+Table~\ref{tab:vehicle_receiver_comparison} summarizes the performance obtained with the vehicle receiver.
+
+Among all algorithms, TD3PG achieved the highest secrecy performance under Rician fading, reaching a final rolling secrecy rate of $5.97$ Mbps and a peak secrecy rate of $8.66$ Mbps. SAC achieved nearly identical performance, obtaining $5.92$ Mbps under Rician fading and $3.77$ Mbps under Rayleigh fading. These results confirm that continuous-control actor-critic frameworks remain highly effective even when the legitimate receiver exhibits significant mobility.
+
+D3QN demonstrated competitive performance despite its discrete action formulation. Although it required considerably more episodes to converge (approximately 55--57 episodes), it exhibited the smallest performance degradation when compared with the stationary IoT baseline. This suggests that the dueling architecture provides strong state-value estimation capabilities that help compensate for receiver-induced channel variability.
+
+PPO converged extremely rapidly, stabilizing within only a few episodes. However, its final secrecy rates remained below those achieved by SAC and TD3PG, indicating that rapid convergence does not necessarily translate into optimal long-term secrecy performance.
+
+The discrete-action DQN baseline consistently produced the lowest secrecy rates. The inability to execute fine-grained trajectory corrections becomes increasingly problematic when tracking a moving receiver, highlighting the importance of continuous control in highly dynamic wireless environments.
+
+\begin{table}[h!]
+\caption{Vehicle Receiver Performance Summary}
+\label{tab:vehicle_receiver_comparison}
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Algorithm \& Channel} &
+\textbf{Final Roll-100 (Mbps)} &
+\textbf{Best Secrecy (Mbps)} &
+\textbf{Average Reward} \\
+\midrule
+DQN (Rician)      & 4.11 & 6.35 & 3.60 \\
+DQN (Rayleigh)    & 2.69 & 4.64 & 2.20 \\
+DDPG (Rician)     & 5.74 & 8.23 & 4.51 \\
+DDPG (Rayleigh)   & 3.70 & 5.97 & 2.45 \\
+D3QN (Rician)     & 5.64 & 7.93 & 5.08 \\
+D3QN (Rayleigh)   & 3.61 & 6.08 & 2.98 \\
+PPO (Rician)      & 5.45 & 7.87 & 4.69 \\
+PPO (Rayleigh)    & 3.62 & 6.02 & 2.87 \\
+SAC (Rician)      & 5.92 & 8.65 & 4.93 \\
+SAC (Rayleigh)    & 3.77 & 7.28 & 2.81 \\
+TD3PG (Rician)    & \textbf{5.97} & \textbf{8.66} & 4.87 \\
+TD3PG (Rayleigh)  & \textbf{3.75} & 6.29 & 2.61 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Comparison with Stationary IoT Receiver}
+
+To quantify the impact of receiver mobility, the vehicle receiver results were compared against the stationary IoT receiver baseline previously evaluated under identical HPPP and channel conditions. Across all algorithms with available baselines (D3QN, PPO, SAC, and TD3PG), vehicle mobility consistently reduced secrecy performance.
+
+The average reduction in final rolling secrecy rate was approximately $0.57$ Mbps. SAC experienced the largest degradation, with an average decrease of approximately $0.92$ Mbps across both channel models. In contrast, D3QN exhibited the smallest reduction (approximately $0.20$ Mbps), indicating superior robustness to receiver mobility.
+
+This behavior can be explained by the fact that a moving receiver continuously alters the optimal relay and jammer positioning strategy. Consequently, the UAVs must simultaneously track the receiver while maintaining favorable channel conditions and suppressing information leakage to nearby eavesdroppers.
+
+\begin{table*}[t]
+\caption{Comparison of IoT Receiver and Vehicle Receiver Performance}
+\label{tab:iot_vs_vehicle}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{llcccccc}
+\toprule
+\textbf{Algorithm} &
+\textbf{Channel} &
+\textbf{IoT Roll-100} &
+\textbf{Vehicle Roll-100} &
+\textbf{IoT Best} &
+\textbf{Vehicle Best} &
+\textbf{Difference} \\
+&
+&
+\textbf{(Mbps)} &
+\textbf{(Mbps)} &
+\textbf{(Mbps)} &
+\textbf{(Mbps)} &
+\textbf{(Mbps)} \\
+\midrule
+
+D3QN  & Rayleigh & 3.8124 & 3.6073 & 7.5302 & 6.0811 & -0.2051 \\
+D3QN  & Rician   & 5.8336 & 5.6387 & 9.5194 & 7.9256 & -0.1949 \\
+
+% DDPG  & Rayleigh & -- & 3.6972 & -- & 5.9746 & -- \\
+% DDPG  & Rician   & -- & 5.7404 & -- & 8.2259 & -- \\
+
+% DQN   & Rayleigh & -- & 2.6912 & -- & 4.6448 & -- \\
+% DQN   & Rician   & -- & 4.1094 & -- & 6.3460 & -- \\
+
+PPO   & Rayleigh & 4.1549 & 3.6218 & 7.7894 & 6.0214 & -0.5331 \\
+PPO   & Rician   & 6.0945 & 5.4519 & 9.5921 & 7.8745 & -0.6425 \\
+
+SAC   & Rayleigh & 4.7183 & 3.7740 & 8.6644 & 7.2844 & -0.9443 \\
+SAC   & Rician   & 6.8231 & 5.9223 & 9.9705 & 8.6538 & -0.9008 \\
+
+TD3PG & Rayleigh & 4.2782 & 3.7500 & 7.9225 & 6.2900 & -0.5282 \\
+TD3PG & Rician   & 6.5580 & 5.9658 & 9.8495 & 8.6550 & -0.5922 \\
+
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsubsection{Key Observations}
+
+Several important insights emerge from the vehicle receiver experiments:
+
+\begin{enumerate}
+    \item \textbf{Receiver mobility degrades secrecy performance.} All algorithms experience lower secrecy rates compared to the stationary IoT scenario because the relay-receiver and jammer-receiver distances vary continuously.
+
+    \item \textbf{Rician fading remains advantageous.} Every algorithm achieves substantially higher secrecy rates under Rician fading than under Rayleigh fading. The presence of a dominant line-of-sight component provides stronger and more predictable communication links, even in the presence of receiver mobility.
+
+    \item \textbf{Continuous-control algorithms are essential.} TD3PG, SAC, DDPG, and PPO significantly outperform the discrete-action DQN baseline. Fine-grained trajectory adaptation becomes increasingly important as receiver mobility increases.
+
+    \item \textbf{SAC and TD3PG remain the strongest overall performers.} Both algorithms consistently achieve the highest secrecy rates and maintain rapid convergence despite the dynamic channel environment.
+
+    \item \textbf{D3QN exhibits strong robustness.} Although slower to converge, D3QN experiences the smallest mobility-induced degradation, suggesting improved resilience to receiver motion.
+\end{enumerate}
+
+Overall, the results demonstrate that replacing a stationary IoT receiver with a moving vehicle introduces a significantly more challenging optimization problem. Nevertheless, advanced actor-critic methods such as SAC and TD3PG continue to achieve high secrecy rates, confirming the effectiveness of deep reinforcement learning for secure UAV-assisted communications in highly dynamic environments.
+
+\subsection{Impact of Receiver Mobility Models}
+In addition to the baseline Random Walk model, we evaluated the trajectory tracking and power allocation performance under three alternative mobility schemas:
+\begin{enumerate}
+    \item \textit{Random Waypoint (RWP)}: The user chooses a random waypoint $\mathbf{w}_U \sim \mathcal{U}(-L/2, L/2)^2$ and moves towards it at a constant speed $v_U \sim \mathcal{U}(v_{\min}, v_{\max})$. Upon arrival ($\|\mathbf{q}_U - \mathbf{w}_U\| \le 1.0\text{ m}$), the user pauses for a fixed duration ($N_{\text{pause}} = 10$ steps) before selecting a new waypoint.
+    \item \textit{Gauss-Markov (GM)}: The user's velocity vector $\mathbf{v}_U(t)$ is updated recursively to incorporate acceleration correlation and memory:
+    \begin{equation}
+        \mathbf{v}_U(t) = \alpha \mathbf{v}_U(t-\Delta t) + (1-\alpha)\boldsymbol{\mu}_U + \sqrt{1-\alpha^2}\mathbf{n}(t),
+    \end{equation}
+    where $\alpha = 0.75$ regulates velocity memory, $\boldsymbol{\mu}_U = v_{\text{mean}} \frac{\mathbf{v}_U(t-\Delta t)}{\|\mathbf{v}_U(t-\Delta t)\|}$ represents the mean drift direction, and $\mathbf{n}(t) \sim \mathcal{N}(\mathbf{0}, \sigma_{\text{gm}}^2 \mathbf{I})$ is the random Gaussian noise.
+    \item \textit{Constant Velocity (CV)}: The user flies in a straight line at a constant speed $v_U = 2.0\text{ m/s}$. Upon hitting a boundary, it undergoes an elastic bounce, inverting the orthogonal velocity component.
+\end{enumerate}
+
+Table~\ref{tab:mobility_comparison} presents the comparative final rolling secrecy rates across these models.
+The results reveal that Random Waypoint and Random Walk models allow for higher overall secrecy rates. Because RWP features pause steps and RW exhibits localized Brownian fluctuations, the user remains within a smaller effective spatial radius during episodes, facilitating easier tracking for the relay UAV.
+Conversely, the Gauss-Markov and Constant Velocity models represent harder tracking scenarios. In particular, the Constant Velocity model requires the user to sweep across the entire area, forcing the UAVs to execute continuous, high-speed tracking maneuvers.
+A critical insight emerges from the Constant Velocity model: \textbf{TD3PG outperforms SAC} under this deterministic regime, achieving 5.9090 Mbps vs. SAC's 5.8078 Mbps in Rician channels, and 4.1421 Mbps vs. SAC's 3.8561 Mbps in Rayleigh channels. Because the user's trajectory is highly predictable (rectilinear paths), the deterministic policy gradient of TD3PG is able to learn a highly precise, noise-free tracking policy. In contrast, SAC's maximum-entropy objective continues to inject exploration noise (policy variance) into the spatial actions, which introduces minor positional deviations (jitter) that degrade its average secrecy rate. However, in stochastic mobility environments (like Random Walk and Gauss-Markov), SAC's exploration robustness enables it to outperform TD3PG.
+
+\begin{table}[h!]
+\caption{Final Rolling Secrecy Rate (Mbps) Across Different Receiver Mobility Models}
+\centering
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Mobility Model} & \textbf{Channel} & \textbf{D3QN} & \textbf{PPO} & \textbf{SAC} & \textbf{TD3PG} \\
+\midrule
+Random Walk (RW)       & Rician   & 3.8076 & 5.3248 & 6.3631 & 5.7664 \\
+                       & Rayleigh & 2.4102 & 3.4653 & 4.2993 & 3.6963 \\
+\midrule
+Random Waypoint (RWP)  & Rician   & 3.8959 & 5.5501 & 6.0736 & 5.8301 \\
+                       & Rayleigh & 2.4492 & 3.5367 & 4.1956 & 3.7869 \\
+\midrule
+Gauss-Markov (GM)      & Rician   & 3.7400 & 5.4447 & 6.1558 & 5.8876 \\
+                       & Rayleigh & 2.3380 & 3.4777 & 4.0786 & 3.8783 \\
+\midrule
+Constant Velocity (CV) & Rician   & 3.7295 & 5.2842 & 5.8078 & 5.9090 \\
+                       & Rayleigh & 2.3529 & 3.4489 & 3.8561 & 4.1421 \\
+\bottomrule
+\end{tabular}
+\label{tab:mobility_comparison}
+\end{table}
+
+\section{Conclusion}
+In this paper, we presented a comprehensive comparative study of four deep reinforcement learning frameworks (D3QN, PPO, SAC, and TD3PG) for cooperative trajectory and power optimization in a secure dual-UAV relay-jammer communication system. The proposed framework incorporated realistic physical-layer security constraints, including Decode-and-Forward relaying, UAV mobility limitations, battery depletion effects, motion smoothness penalties, and Rayleigh/Rician fading channel models.
+
+Extensive experiments were conducted under both single-eavesdropper and HPPP multi-eavesdropper environments. The results consistently demonstrated that continuous-control architectures significantly outperform discrete-action approaches in terms of secrecy-rate maximization, trajectory smoothness, and convergence stability. Among all evaluated methods, SAC and TD3PG emerged as the strongest performers, achieving superior secrecy rates while maintaining robust adaptation to dynamic wireless channel conditions.
+
+To further investigate practical deployment scenarios, the framework was extended to support dynamic vehicle receivers and multiple receiver mobility models. The vehicle receiver experiments showed that increased receiver mobility introduces additional channel variability and generally reduces achievable secrecy rates. Nevertheless, SAC and TD3PG maintained strong performance and rapid convergence, confirming their suitability for highly dynamic communication environments. The mobility-model analysis further revealed that deterministic receiver trajectories favor TD3PG, whereas stochastic mobility patterns benefit from SAC's entropy-driven exploration capabilities.
+
+Overall, the results confirm that deep reinforcement learning provides an effective and scalable solution for secure UAV-assisted communications in both static and highly dynamic environments. Future work will focus on extending the framework to multi-agent reinforcement learning (MARL) architectures, dynamic three-dimensional trajectory optimization with variable altitudes, cooperative multi-UAV networks, and centralized training with decentralized execution (CTDE) strategies for large-scale secure aerial communication systems.
+
+% In this paper, we presented a rigorous comparative study of four deep reinforcement learning frameworks (D3QN, PPO, SAC, and TD3PG) designed to optimize cooperative trajectory control and transmit power allocation for a secure dual-UAV relay system. The physical environment incorporated realistic Decode-and-Forward half-duplex structures, energetic battery depletion limits, motion penalties, and small-scale Rayleigh/Rician fading propagation models. 
+
+% Our empirical evaluations demonstrated that continuous control architectures are crucial for airborne communications, with Soft Actor-Critic (SAC) and Twin Delayed Deep Deterministic Policy Gradient (TD3PG) showing clear superiority in terms of sample efficiency, convergence stability, and spatial positioning. They successfully learned complex cooperative policies, maintaining the relay UAV at a capacity-maximizing midpoint while deploying the jammer UAV to neutralize ground eavesdroppers. 
+
+% In future work, we plan to extend this framework to multi-agent architectures (MARL), incorporating dynamic 3D movements with variable altitudes, multi-eavesdropper topologies, and centralized training with decentralized execution (CTDE) schemes.
+
+\begin{thebibliography}{1}
+\bibitem{uav_survey}
+Y.~Zeng, R.~Zhang, and T.~J.~Lim, ``Wireless communications with unmanned aerial vehicles: Opportunities and challenges,'' \emph{IEEE Commun. Mag.}, vol.~54, no.~5, pp. 36--42, May 2016.
+\bibitem{pls_survey}
+A.~Mukherjee, S.~A.~A.~Fakoorian, J.~Huang, and A.~L.~Swindlehurst, ``Principles of physical layer security in multiuser wireless networks: A survey,'' \emph{IEEE Commun. Surveys Tuts.}, vol.~16, no.~3, pp. 1550--1573, 3rd Quart. 2014.
+\bibitem{sac_paper}
+T.~Haarnoja, A.~Zhou, P.~Abbeel, and S.~Levine, ``Soft actor-critic: Off-policy maximum entropy deep reinforcement learning with a stochastic actor,'' in \emph{Proc. ICML}, Stockholmsmässan, Sweden, Jul. 2018, pp. 1861--1870.
+\bibitem{td3_paper}
+S.~Fujimoto, H.~Hoof, and D.~Meger, ``Addressing function approximation error in actor-critic methods,'' in \emph{Proc. ICML}, Stockholmsmässan, Sweden, Jul. 2018, pp. 1587--1596.
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,164 @@
+\section{Computational Complexity and Analysis}
+
+In this section, we present a rigorous theoretical and empirical analysis of the computational and spatial complexity of the secure dual-UAV relay-jammer system and the four reinforcement learning (RL) algorithms under study. 
+
+\subsection{Environment Simulation and Spatial Scaling}
+The computational cost of the environment simulation per time step $\Delta t$ is primarily determined by the spatial modeling of ground eavesdroppers using a Homogeneous Poisson Point Process (HPPP) $\Phi_E$. For a simulation region $\mathcal{A}$ of area $A_{\text{area}}$ and eavesdropper spatial density $\lambda_{\text{eve}}$, the number of active eavesdroppers $N_{\text{eve}}$ is a Poisson random variable with expected value:
+\begin{equation}
+    \mathbb{E}[N_{\text{eve}}] = \lambda_{\text{eve}} A_{\text{area}}.
+\end{equation}
+In our implementation, $\lambda_{\text{eve}} = 2 \times 10^{-5}$ Eves/m$^2$ and $A_{\text{area}} = 10^6$ m$^2$, yielding $\mathbb{E}[N_{\text{eve}}] = 20$. At each step, the environment must perform the following operations:
+\begin{enumerate}
+    \item \textbf{Kinematic Updates}: Updates the positions and velocities of the legitimate user, relay UAV, and jammer UAV ($O(1)$ operations).
+    \item \textbf{Fading Generation}: Generates independent fading power gains for the legitimate links ($h_{UR}, h_{RB}$) and the eavesdropping links ($h_{UE,e}, h_{JE,e}$ for $e \in \{1,\dots,N_{\text{eve}}\}$), which scales as $O(N_{\text{eve}})$.
+    \item \textbf{Worst-Case Eavesdropper Search}: Evaluates the SINR and interception rate for each of the $N_{\text{eve}}$ eavesdroppers to identify the maximum leakage rate:
+    \begin{equation}
+        R_{\text{eve}}(t) = \max_{e \in \{1, \dots, N_{\text{eve}}\}} B \log_2\left(1 + \frac{P_U h_{UE,e}(t)}{\sigma^2 + P_J(t) h_{JE,e}(t)}\right).
+    \end{equation}
+\end{enumerate}
+Computing the maximum requires $N_{\text{eve}}$ evaluations of path loss, fading, and logarithmic capacity. Therefore, the computational complexity of the communication environment step scales linearly with the eavesdropper density and area:
+\begin{equation}
+    \mathcal{C}_{\text{env}} = O(N_{\text{eve}}) = O(\lambda_{\text{eve}} A_{\text{area}}).
+\end{equation}
+This linear relationship is empirically verified through Monte Carlo trials, where realizations with higher spatial clusters of eavesdroppers exhibit proportional increases in execution time.
+
+\subsection{State and Action Space Dimensions}
+The observation vector $s_t$ in the \textit{full} observation mode integrates geometric coordinates, distances, channel gains, SNRs, battery capacities, and HPPP spatial statistics (e.g., nearest Eve distance, mean Eve distance, and total count). This results in a fixed state space dimension of $d_s = 42$.
+
+The action space dimension $d_a$ depends on the control paradigm:
+\begin{itemize}
+    \item \textbf{Continuous Action Space} ($d_a = 5$): Governed by PPO, SAC, and TD3PG, representing continuous velocity adjustments for both UAVs ($\mathbf{v}_R, \mathbf{v}_J$) and the continuous jammer power control ($P_J \in [P_{J,\min}, P_{J,\max}]$).
+    \item \textbf{Discrete Action Space} ($d_a = 867$): Used by D3QN, resulting from the Cartesian product of $17$ discrete velocity commands for the relay UAV, $17$ velocity commands for the jammer UAV, and $3$ discrete power levels ($17 \times 17 \times 3 = 867$).
+\end{itemize}
+
+\subsection{Theoretical Time Complexity of RL Algorithms}
+Let $d_s$ denote the state dimension, $d_a$ the action dimension, $d_h$ the hidden layer dimension (default $d_h = 64$), and $B_{\text{size}}$ the training batch size. 
+
+\subsubsection{D3QN (Dueling Double DQN)}
+D3QN approximates Q-values through a shared feature network, a value head $V(s)$, and an advantage head $A(s,a)$. 
+\begin{itemize}
+    \item \textbf{Inference Complexity}: A forward pass requires processing the shared feature extractor ($O(d_s d_h + d_h^2)$), the value stream ($O(d_h^2)$), and the advantage stream ($O(d_h d_a)$). Action selection takes $O(d_a)$ via argmax:
+    \begin{equation}
+        \mathcal{C}_{\text{inf, D3QN}} = O(d_s d_h + d_h^2 + d_h d_a + d_a).
+    \end{equation}
+    \item \textbf{Training Complexity}: Each training update requires evaluating online and target networks for the current batch and next states. The complexity per gradient step is:
+    \begin{equation}
+        \mathcal{C}_{\text{train, D3QN}} = O\left( B_{\text{size}} \cdot (d_s d_h + d_h^2 + d_h d_a) \right).
+    \end{equation}
+\end{itemize}
+Due to the large discrete action space ($d_a = 867$), the $d_h d_a$ product introduces non-negligible computational overhead during both inference and training.
+
+\subsubsection{PPO (Proximal Policy Optimization)}
+PPO is an on-policy method featuring a stochastic Gaussian Actor ($\pi_\theta$) and a Critic ($V_\phi$).
+\begin{itemize}
+    \item \textbf{Inference Complexity}: Action selection involves only the Actor network, mapping the state to mean and standard deviation parameters followed by a continuous squashing function:
+    \begin{equation}
+        \mathcal{C}_{\text{inf, PPO}} = O(d_s d_h + d_h^2 + d_h d_a).
+    \end{equation}
+    \item \textbf{Training Complexity}: Over an episode of length $T_{\text{episode}}$, PPO computes advantages via GAE ($O(T_{\text{episode}} \cdot (d_s d_h + d_h^2))$) and performs updates for $K_{\text{epochs}}$ epochs using mini-batches:
+    \begin{equation}
+        \mathcal{C}_{\text{train, PPO}} = O\left( K_{\text{epochs}} \cdot T_{\text{episode}} \cdot (d_s d_h + d_h^2 + d_h d_a) \right).
+    \end{equation}
+\end{itemize}
+
+\subsubsection{SAC (Soft Actor-Critic)}
+SAC utilizes a stochastic Actor and dual Critics ($Q_{\phi_1}, Q_{\phi_2}$) to combat overestimation bias.
+\begin{itemize}
+    \item \textbf{Inference Complexity}: Similar to PPO, inference is bounded by a single Actor forward pass:
+    \begin{equation}
+        \mathcal{C}_{\text{inf, SAC}} = O(d_s d_h + d_h^2 + d_h d_a).
+    \end{equation}
+    \item \textbf{Training Complexity}: Each gradient step samples a batch $B_{\text{size}}$ and updates dual online Critics, target Critics, the Actor, and the temperature parameter $\alpha$:
+    \begin{equation}
+        \mathcal{C}_{\text{train, SAC}} = O\left( B_{\text{size}} \cdot ((d_s + d_a) d_h + d_h^2 + d_h d_a) \right).
+    \end{equation}
+\end{itemize}
+
+\subsubsection{TD3PG (Twin Delayed Deep Deterministic Policy Gradient)}
+TD3PG implements a deterministic Actor and dual Critics, delaying policy updates by $d$ steps.
+\begin{itemize}
+    \item \textbf{Inference Complexity}: Bounded by the deterministic Actor network:
+    \begin{equation}
+        \mathcal{C}_{\text{inf, TD3PG}} = O(d_s d_h + d_h^2 + d_h d_a).
+    \end{equation}
+    \item \textbf{Training Complexity}: Critic networks are updated every step, while the Actor and target networks are updated every $d$ steps:
+    \begin{equation}
+        \mathcal{C}_{\text{train, TD3PG}} = O\left( B_{\text{size}} \cdot \left[ (d_s + d_a) d_h + d_h^2 + \frac{d_s d_h + d_h^2 + d_h d_a}{d} \right] \right).
+    \end{equation}
+\end{itemize}
+
+\subsection{Theoretical Space (Memory) Complexity Analysis}
+The space complexity comprises model parameter storage and experience replay memory.
+
+\subsubsection{Model Parameter Complexity}
+The memory required to store network weights scales with the number of networks:
+\begin{itemize}
+    \item \textbf{D3QN}: Consists of a single online network and a target network. The parameter count $W_{\text{D3QN}}$ for one dueling network is:
+    \begin{equation}
+        W_{\text{D3QN}} = \underbrace{(d_s d_h + d_h^2 + 2d_h)}_{\text{Shared Feature Layers}} + \underbrace{\left( \frac{1}{2} d_h^2 + d_h + 1 \right)}_{\text{Value Stream}} + \underbrace{\left( \frac{1}{2} d_h^2 + \frac{1}{2} d_h d_a + \frac{1}{2} d_h + d_a \right)}_{\text{Advantage Stream}}.
+    \end{equation}
+    For $d_s = 42, d_h = 64$, and $d_a = 867$, the online network contains $\approx 35,800$ parameters, requiring $143.2$ KB of memory (using 32-bit floats). The target network doubles this requirement to $\approx 286.4$ KB.
+    
+    \item \textbf{PPO}: Uses one Actor and one Critic network:
+    \begin{align}
+        W_{\text{actor}} &= d_s d_h + d_h^2 + 2d_h + d_h d_a + 2d_a, \\
+        W_{\text{critic}} &= d_s d_h + d_h^2 + 3d_h + 1.
+    \end{align}
+    For $d_a = 5$, PPO requires $\approx 14,300$ parameters ($\approx 57.2$ KB).
+    
+    \item \textbf{SAC}: Features one Actor, two online Critics, two target Critics, and an entropy coefficient $\alpha$. The space complexity scales as:
+    \begin{align}
+        W_{\text{actor}} &= d_s d_h + d_h^2 + 2d_h + 2d_h d_a + 2d_a, \\
+        W_{\text{critic}} &= (d_s + d_a) d_h + d_h^2 + 3d_h + 1.
+    \end{align}
+    Total parameters sum to $W_{\text{actor}} + 4 \cdot W_{\text{critic}} \approx 35,400$ parameters ($\approx 141.6$ KB).
+    
+    \item \textbf{TD3PG}: Integrates one online Actor, one target Actor, two online Critics, and two target Critics:
+    \begin{align}
+        W_{\text{actor}} &= d_s d_h + d_h^2 + 2d_h + d_h d_a + d_a, \\
+        W_{\text{critic}} &= (d_s + d_a) d_h + d_h^2 + 3d_h + 1.
+    \end{align}
+    Total parameters count is $\approx 35,000$ parameters ($\approx 140.0$ KB).
+\end{itemize}
+
+\subsubsection{Experience Replay Memory Footprint}
+The replay buffer stores transitions of the form $(s_t, a_t, r_t, s_{t+1}, \text{done})$. For a buffer capacity $D_{\text{replay}}$:
+\begin{itemize}
+    \item \textbf{Off-policy (D3QN, SAC, TD3PG)}:
+    \begin{equation}
+        \mathcal{M}_{\text{replay}} = D_{\text{replay}} \cdot \left( 2 d_s + d_a + 2 \right) \cdot 4 \text{ bytes}.
+    \end{equation}
+    For $D_{\text{replay}} = 50,000$, $d_s = 42$, and $d_a = 5$ (continuous), the buffer footprint is:
+    \begin{equation{}}
+        \mathcal{M}_{\text{replay}} = 50,000 \cdot (84 + 5 + 2) \cdot 4 = 18.20 \text{ MB}.
+    \end{equation{}}
+    For D3QN, where the action is a scalar integer ($d_a = 1$), the memory is $17.40$ MB.
+    
+    \item \textbf{On-policy (PPO)}: PPO uses a transient trajectory buffer of size $T_{\text{episode}} = 200$, requiring negligible storage:
+    \begin{equation}
+        \mathcal{M}_{\text{traj}} = 200 \cdot (84 + 5 + 2) \cdot 4 = 72.8 \text{ KB}.
+    \end{equation}
+\end{itemize}
+
+\subsection{Summary and Algorithmic Trade-offs}
+Table~\ref{tab:complexity_summary} summarizes the theoretical complexities and storage overheads of the four models.
+
+\begin{table}[h!]
+\caption{Algorithmic Complexity and Memory Comparison}
+\label{tab:complexity_summary}
+\centering
+\begin{tabular}{lllll}
+\toprule
+\textbf{Metric} & \textbf{D3QN} & \textbf{PPO} & \textbf{SAC} & \textbf{TD3PG} \\
+\midrule
+Action Space Type & Discrete ($d_a = 867$) & Continuous ($d_a = 5$) & Continuous ($d_a = 5$) & Continuous ($d_a = 5$) \\
+Inference Complexity & $O(d_s d_h + d_h^2 + d_h d_a)$ & $O(d_s d_h + d_h^2 + d_h d_a)$ & $O(d_s d_h + d_h^2 + d_h d_a)$ & $O(d_s d_h + d_h^2 + d_h d_a)$ \\
+Training Complexity (per step) & $O(B_{\text{size}} \cdot [d_s d_h + d_h^2 + d_h d_a])$ & $O(K_{\text{epochs}} \cdot T_{\text{episode}} \cdot [\dots])$ & $O(B_{\text{size}} \cdot [(d_s+d_a)d_h + d_h^2])$ & $O(B_{\text{size}} \cdot [(d_s+d_a)d_h + d_h^2])$ \\
+Parameter Count & $\approx 71,600$ & $\approx 14,300$ & $\approx 35,400$ & $\approx 35,000$ \\
+Buffer Size & $50,000$ transitions & $200$ transitions & $50,000$ transitions & $50,000$ transitions \\
+Buffer Memory & $17.40$ MB & $72.80$ KB & $18.20$ MB & $18.20$ MB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+While PPO achieves the lowest memory footprint by discarding historical transitions, its on-policy training is less sample-efficient than off-policy methods (SAC and TD3PG). Conversely, while SAC and TD3PG require a replay buffer, the resulting memory overhead ($\approx 18.2$ MB) is trivial for modern hardware, and they provide significantly smoother trajectory control and superior secrecy rates in Rayleigh and Rician fading environments.
