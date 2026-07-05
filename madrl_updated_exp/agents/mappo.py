@@ -138,6 +138,7 @@ class MAPPOAgent(BaseAgent):
         self.ppo_epochs = ppo_epochs
         self.weight_decay = weight_decay
         self.batch_size = 256
+        self.is_on_policy = True
 
         self.model = ActorCritic(obs_dim, act_dim, hidden_dim, n_layers,
                                  temperature, clip_logits).to(self.device)
@@ -147,6 +148,9 @@ class MAPPOAgent(BaseAgent):
         self._train_pre_tanh_log = []
 
     def act(self, obs: np.ndarray, deterministic: bool = False) -> np.ndarray:
+        return self.sample_action(obs, deterministic)["action"]
+
+    def sample_action(self, obs: np.ndarray, deterministic: bool = False) -> dict:
         obs_t = torch.FloatTensor(obs[None, :]).to(self.device)
         with torch.no_grad():
             action, log_prob, value, pre_tanh = self.model.get_action(obs_t, deterministic)
@@ -158,7 +162,13 @@ class MAPPOAgent(BaseAgent):
         })
         if not deterministic:
             self._train_pre_tanh_log.append(pre_tanh_np)
-        return action_np
+        log_prob_val = None if log_prob is None else float(log_prob.cpu().numpy().item())
+        value_val = float(value.cpu().numpy().item())
+        return {
+            "action": action_np,
+            "log_prob": log_prob_val,
+            "value": value_val,
+        }
 
     def get_action_log(self) -> list[dict]:
         return self._action_log
@@ -191,6 +201,7 @@ class MAPPOAgent(BaseAgent):
         rewards = torch.FloatTensor(np.clip(buffer_data["rewards"], -1e6, 1e6)).to(self.device)
         dones = torch.FloatTensor(buffer_data["dones"]).to(self.device)
         values = torch.FloatTensor(buffer_data["values"]).to(self.device)
+        old_log_probs = torch.FloatTensor(buffer_data["log_probs"]).to(self.device)
 
         advantages = self._compute_gae(rewards, values, dones)
         returns = advantages + values
@@ -244,10 +255,11 @@ class MAPPOAgent(BaseAgent):
                 b_actions = actions[batch]
                 b_advantages = advantages[batch]
                 b_returns = returns[batch]
+                b_old_log_probs = old_log_probs[batch]
 
-                log_prob, entropy, value = self.model.evaluate(b_obs, b_actions)
+                new_log_prob, entropy, value = self.model.evaluate(b_obs, b_actions)
 
-                ratio = torch.exp(log_prob - log_prob.detach())
+                ratio = torch.exp(new_log_prob - b_old_log_probs)
                 surr1 = ratio * b_advantages
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_epsilon, 1.0 + self.clip_epsilon) * b_advantages
                 policy_loss = -torch.min(surr1, surr2).mean()
@@ -269,7 +281,7 @@ class MAPPOAgent(BaseAgent):
                 n_minibatch_updates += 1
 
                 with torch.no_grad():
-                    kl = (ratio - 1.0 - torch.log(torch.clamp(ratio, min=1e-8))).mean().item()
+                    kl = (b_old_log_probs - new_log_prob).mean().item()
                     approx_kl = max(approx_kl, kl)
 
         n_updates = max(n_minibatch_updates, 1)

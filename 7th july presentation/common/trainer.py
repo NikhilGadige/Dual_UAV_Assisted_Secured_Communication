@@ -51,6 +51,7 @@ class SensingTrainer:
         self.buffer = {name: [] for name in self.env.agent_names}
         self.history = defaultdict(list)
         self.rows: list[dict] = []
+        self.eval_seeds = [env_cfg.seed + 10_000 + i for i in range(self.n_eval_episodes)]
 
     def train(self):
         for ep in range(1, self.n_episodes + 1):
@@ -60,22 +61,41 @@ class SensingTrainer:
                     agent.reset_noise()
 
             ep_crb, ep_pd, ep_reward = [], [], []
+            episode_batches = {name: [] for name in self.env.agent_names}
             for _ in range(self.env.cfg.steps_per_episode):
                 actions = {}
                 for name, agent in self.agents.items():
                     agent.train_mode()
-                    actions[name] = agent.act(obs[name])
+                    if getattr(agent, "is_on_policy", False):
+                        sample = agent.sample_action(obs[name])
+                        actions[name] = sample["action"]
+                        episode_batches[name].append({
+                            "obs": obs[name].copy(),
+                            "action": sample["action"].copy(),
+                            "reward": None,
+                            "done": None,
+                            "value": sample["value"],
+                            "log_prob": sample["log_prob"],
+                        })
+                    else:
+                        actions[name] = agent.act(obs[name])
 
                 next_obs, rewards, terminated, truncated, info = self.env.step(actions)
 
                 for name in self.agents:
-                    self.buffer[name].append({
-                        "obs": obs[name].copy(),
-                        "action": actions[name].copy(),
-                        "reward": float(np.clip(rewards[name], -1e6, 1e6)),
-                        "next_obs": next_obs[name].copy(),
-                        "done": bool(terminated[name] or truncated[name]),
-                    })
+                    reward_val = float(np.clip(rewards[name], -1e6, 1e6))
+                    done_val = bool(terminated[name] or truncated[name])
+                    if getattr(self.agents[name], "is_on_policy", False):
+                        episode_batches[name][-1]["reward"] = reward_val
+                        episode_batches[name][-1]["done"] = done_val
+                    else:
+                        self.buffer[name].append({
+                            "obs": obs[name].copy(),
+                            "action": actions[name].copy(),
+                            "reward": reward_val,
+                            "next_obs": next_obs[name].copy(),
+                            "done": done_val,
+                        })
                 ep_crb.append(info["crb_mean"])
                 ep_pd.append(info["pd_mean"])
                 ep_reward.append(info["reward"])
@@ -86,7 +106,10 @@ class SensingTrainer:
 
             loss_stats = {}
             for name, agent in self.agents.items():
-                if len(self.buffer[name]) >= agent.batch_size:
+                if getattr(agent, "is_on_policy", False):
+                    if episode_batches[name]:
+                        loss_stats[name] = agent.update(self._episode_to_dict(episode_batches[name]))
+                elif len(self.buffer[name]) >= agent.batch_size:
                     batch = self._sample_buffer(name, agent.batch_size)
                     loss_stats[name] = agent.update(batch)
 
@@ -98,6 +121,11 @@ class SensingTrainer:
             self.history["reward"].append(avg_reward)
 
             row = {"episode": ep, "avg_crb": avg_crb, "avg_pd": avg_pd, "avg_reward": avg_reward}
+            if ep % self.eval_interval == 0 or ep == 1 or ep == self.n_episodes:
+                eval_stats = self.evaluate()
+                for k, v in eval_stats.items():
+                    row[f"eval_{k}"] = v
+                    self.history[f"eval_{k}"].append(v)
             for name, stats in loss_stats.items():
                 for k, v in stats.items():
                     row[f"{name}/{k}"] = v
@@ -105,6 +133,8 @@ class SensingTrainer:
 
             if ep % self.log_interval == 0 or ep == 1 or ep == self.n_episodes:
                 print(f"Ep {ep:4d}/{self.n_episodes} | avg_CRB={avg_crb:.5f} | avg_Pd={avg_pd:.3f} | reward={avg_reward:.3f}")
+            if "eval_avg_crb" in row:
+                print(f"          eval_CRB={row['eval_avg_crb']:.5f} | eval_Pd={row['eval_avg_pd']:.3f} | eval_reward={row['eval_avg_reward']:.3f}")
 
             if ep % self.save_interval == 0 or ep == self.n_episodes:
                 self.save_checkpoints(ep)
@@ -123,6 +153,59 @@ class SensingTrainer:
             "next_obs": np.array([b["next_obs"] for b in batch]),
             "dones": np.array([b["done"] for b in batch]),
             "values": np.zeros(len(batch)),
+        }
+
+    def _episode_to_dict(self, episode_data: list[dict]) -> dict:
+        return {
+            "obs": np.array([b["obs"] for b in episode_data]),
+            "actions": np.array([b["action"] for b in episode_data]),
+            "rewards": np.array([b["reward"] for b in episode_data]),
+            "dones": np.array([b["done"] for b in episode_data]),
+            "values": np.array([b["value"] for b in episode_data]),
+            "log_probs": np.array([b["log_prob"] for b in episode_data]),
+        }
+
+    def evaluate(self) -> dict:
+        eval_env = MultiAgentSensingEnv(self.env.cfg)
+        for agent in self.agents.values():
+            agent.eval_mode()
+
+        rewards = []
+        crbs = []
+        pds = []
+        for seed in self.eval_seeds:
+            obs, _ = eval_env.reset(seed=seed, num_mc=eval_env.cfg.num_mc_eval)
+            ep_rewards = []
+            ep_crbs = []
+            ep_pds = []
+            for _ in range(eval_env.cfg.steps_per_episode):
+                actions = {}
+                for name, agent in self.agents.items():
+                    if getattr(agent, "is_on_policy", False):
+                        sample = agent.sample_action(obs[name], deterministic=True)
+                        actions[name] = sample["action"]
+                    else:
+                        actions[name] = agent.act(obs[name], deterministic=True)
+                obs, reward_dict, terminated, truncated, info = eval_env.step(actions, num_mc=eval_env.cfg.num_mc_eval)
+                ep_rewards.append(float(reward_dict[eval_env.agent_names[0]]))
+                ep_crbs.append(float(info["crb_mean"]))
+                ep_pds.append(float(info["pd_mean"]))
+                if terminated.get("__all__", False) or truncated.get("__all__", False):
+                    break
+            rewards.append(float(np.mean(ep_rewards)))
+            crbs.append(float(np.mean(ep_crbs)))
+            pds.append(float(np.mean(ep_pds)))
+
+        for agent in self.agents.values():
+            agent.train_mode()
+
+        return {
+            "avg_crb": float(np.mean(crbs)),
+            "avg_pd": float(np.mean(pds)),
+            "avg_reward": float(np.mean(rewards)),
+            "std_crb": float(np.std(crbs)),
+            "std_pd": float(np.std(pds)),
+            "std_reward": float(np.std(rewards)),
         }
 
     def save_checkpoints(self, episode: int):
