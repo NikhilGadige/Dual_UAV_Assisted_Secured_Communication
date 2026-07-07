@@ -48,28 +48,29 @@ def generate_convergence_plots(csv_path: str, output_dir: str, title: str, color
     crb = np.array([float(r["avg_crb"]) for r in rows])
     pd = np.array([float(r["avg_pd"]) for r in rows])
     reward = np.array([float(r["avg_reward"]) for r in rows])
-    eval_ep_crb, eval_crb = _extract_series(rows, "eval_avg_crb")
-    eval_ep_pd, eval_pd = _extract_series(rows, "eval_avg_pd")
-    eval_ep_reward, eval_reward = _extract_series(rows, "eval_avg_reward")
-    use_eval = len(eval_crb) >= 2 and len(eval_pd) >= 2
-    plot_ep_crb, plot_crb = (eval_ep_crb, eval_crb) if use_eval else (episodes, crb)
-    plot_ep_pd, plot_pd = (eval_ep_pd, eval_pd) if use_eval else (episodes, pd)
-    plot_ep_reward, plot_reward = (eval_ep_reward, eval_reward) if len(eval_reward) >= 2 else (episodes, reward)
-    window = min(20, max(1, len(plot_ep_crb) // 5))
+
+    # Clip CRB trace at 5.0 to ignore abnormally high values and keep the plots stable
+    crb_clipped = np.clip(crb, None, 5.0)
+
+    # Set default rolling window to 50 as requested
+    window = 50
+    if len(episodes) < window:
+        window = max(1, len(episodes) // 2) or 1
 
     paths = {}
 
-    # CRB convergence
+    # CRB convergence plot
     fig, ax = plt.subplots(figsize=(8, 4.5))
-    ax.plot(episodes, crb, color=color, alpha=0.3, linewidth=0.8, label="episode CRB")
-    roll_ep, roll_crb = _rolling(plot_crb, plot_ep_crb, window)
-    ax.plot(plot_ep_crb if len(plot_crb) == 1 else roll_ep, plot_crb if len(plot_crb) == 1 else roll_crb,
-            color=color, linewidth=2.0,
-            label=("evaluation CRB" if use_eval else f"rolling-{window}"))
+    ax.plot(episodes, crb_clipped, color=color, alpha=0.2, linewidth=0.8, label="Episode CRB (raw)")
+    roll_ep, roll_crb = _rolling(crb_clipped, episodes, window)
+    ax.plot(roll_ep, roll_crb, color=color, linewidth=2.0, label=f"CRB Rolling-{window}")
+    
+    ax.set_yscale('log')
+    ax.set_ylim(bottom=0.01, top=10.5)
     ax.set_xlabel("Episode")
-    ax.set_ylabel("CRB trace (lower = better)")
+    ax.set_ylabel("CRB trace (log scale, lower = better)")
     ax.set_title(f"{title} — CRB convergence")
-    ax.grid(alpha=0.25)
+    ax.grid(True, which="both", alpha=0.15)
     ax.legend(fontsize=8)
     fig.tight_layout()
     p = str(out / "crb_convergence.png")
@@ -77,18 +78,17 @@ def generate_convergence_plots(csv_path: str, output_dir: str, title: str, color
     plt.close(fig)
     paths["crb_convergence"] = p
 
-    # Pd convergence
+    # Pd convergence plot
     fig, ax = plt.subplots(figsize=(8, 4.5))
-    ax.plot(episodes, pd, color="#2ca02c", alpha=0.3, linewidth=0.8, label="episode Pd")
-    roll_ep_pd, roll_pd = _rolling(plot_pd, plot_ep_pd, window)
-    ax.plot(plot_ep_pd if len(plot_pd) == 1 else roll_ep_pd, plot_pd if len(plot_pd) == 1 else roll_pd,
-            color="#2ca02c", linewidth=2.0,
-            label=("evaluation Pd" if use_eval else f"rolling-{window}"))
+    ax.plot(episodes, pd, color="#2ca02c", alpha=0.2, linewidth=0.8, label="Episode Pd (raw)")
+    roll_ep_pd, roll_pd = _rolling(pd, episodes, window)
+    ax.plot(roll_ep_pd, roll_pd, color="#2ca02c", linewidth=2.0, label=f"Pd Rolling-{window}")
+    
     ax.set_xlabel("Episode")
     ax.set_ylabel("Detection probability Pd (higher = better)")
     ax.set_ylim(-0.05, 1.05)
     ax.set_title(f"{title} — Pd convergence")
-    ax.grid(alpha=0.25)
+    ax.grid(True, alpha=0.25)
     ax.legend(fontsize=8)
     fig.tight_layout()
     p = str(out / "pd_convergence.png")
@@ -96,44 +96,46 @@ def generate_convergence_plots(csv_path: str, output_dir: str, title: str, color
     plt.close(fig)
     paths["pd_convergence"] = p
 
-    # Combined dual-axis: CRB (left) + Pd (right)
+    # Combined dual-axis plot: CRB (left, log scale) + Pd (right)
     fig, ax1 = plt.subplots(figsize=(8.5, 4.5))
-    x_crb = plot_ep_crb if len(plot_crb) == 1 else roll_ep
-    y_crb = plot_crb if len(plot_crb) == 1 else roll_crb
-    x_pd = plot_ep_pd if len(plot_pd) == 1 else roll_ep_pd
-    y_pd = plot_pd if len(plot_pd) == 1 else roll_pd
-    ax1.plot(x_crb, y_crb, color=color, linewidth=2.0,
-             label="CRB (evaluation)" if use_eval else "CRB (rolling)")
+    ax1.plot(roll_ep, roll_crb, color=color, linewidth=2.0, label=f"CRB Rolling-{window}")
+    
+    ax1.set_yscale('log')
+    ax1.set_ylim(bottom=0.01, top=10.5)
     ax1.set_xlabel("Episode")
-    ax1.set_ylabel("CRB trace", color=color)
+    ax1.set_ylabel("CRB trace (log scale)", color=color)
     ax1.tick_params(axis="y", labelcolor=color)
+    ax1.grid(True, which="both", alpha=0.15)
+    
     ax2 = ax1.twinx()
-    ax2.plot(x_pd, y_pd, color="#2ca02c", linewidth=2.0,
-             label="Pd (evaluation)" if use_eval else "Pd (rolling)")
+    ax2.plot(roll_ep_pd, roll_pd, color="#2ca02c", linewidth=2.0, label=f"Pd Rolling-{window}")
+        
     ax2.set_ylabel("Detection probability Pd", color="#2ca02c")
     ax2.set_ylim(-0.05, 1.05)
     ax2.tick_params(axis="y", labelcolor="#2ca02c")
+    
+    # Combined legend for twin axes
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc="center left", fontsize=8)
+    
     ax1.set_title(f"{title} — CRB & Pd convergence")
-    ax1.grid(alpha=0.25)
     fig.tight_layout()
     p = str(out / "combined_convergence.png")
     fig.savefig(p, dpi=150)
     plt.close(fig)
     paths["combined_convergence"] = p
 
-    # Reward convergence
+    # Reward convergence plot
     fig, ax = plt.subplots(figsize=(8, 4.5))
-    ax.plot(episodes, reward, color="#9467bd", alpha=0.3, linewidth=0.8, label="episode reward")
-    reward_window = min(20, max(1, len(plot_reward) // 5))
-    roll_ep_r, roll_r = _rolling(plot_reward, plot_ep_reward, reward_window)
-    ax.plot(plot_ep_reward if len(plot_reward) == 1 else roll_ep_r,
-            plot_reward if len(plot_reward) == 1 else roll_r,
-            color="#9467bd", linewidth=2.0,
-            label=("evaluation reward" if len(eval_reward) >= 2 else f"rolling-{reward_window}"))
+    ax.plot(episodes, reward, color="#9467bd", alpha=0.2, linewidth=0.8, label="Episode Reward (raw)")
+    roll_ep_r, roll_r = _rolling(reward, episodes, window)
+    ax.plot(roll_ep_r, roll_r, color="#9467bd", linewidth=2.0, label=f"Reward Rolling-{window}")
+        
     ax.set_xlabel("Episode")
     ax.set_ylabel("Shared team reward")
     ax.set_title(f"{title} — Reward convergence")
-    ax.grid(alpha=0.25)
+    ax.grid(True, alpha=0.25)
     ax.legend(fontsize=8)
     fig.tight_layout()
     p = str(out / "reward_convergence.png")

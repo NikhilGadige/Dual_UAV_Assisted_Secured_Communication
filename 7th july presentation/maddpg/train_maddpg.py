@@ -43,7 +43,7 @@ def main():
     probe_env = MultiAgentSensingEnv(env_cfg)
     agents = {
         name: DDPGAgent(obs_dim=probe_env.obs_dim, act_dim=probe_env.act_dim, name=name,
-                         hidden_dim=64, batch_size=64)
+                         hidden_dim=64, lr=1e-4, batch_size=128, tau=0.002, noise_std=0.1)
         for name in probe_env.agent_names
     }
 

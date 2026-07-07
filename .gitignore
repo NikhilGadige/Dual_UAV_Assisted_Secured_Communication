@@ -1,3 +1,14 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Device-specific directories
+.python_packages/
+.mplconfig/
+
+# Generated training outputs and plots
+outputs/
+7th july presentation/*/output/
+7th july presentation/comparison_plots/
+sac_study/output/
+td3pg_study/output/

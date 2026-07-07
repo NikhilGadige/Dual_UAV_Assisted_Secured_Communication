@@ -40,7 +40,7 @@ def _extract_series(rows: list[dict], key: str) -> tuple[np.ndarray, np.ndarray]
     return np.array(episodes), np.array(values, dtype=float)
 
 
-def generate_comparison_plots(csv_paths: dict[str, str], output_dir: str, window: int = 20) -> dict:
+def generate_comparison_plots(csv_paths: dict[str, str], output_dir: str, window: int = 50) -> dict:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -53,16 +53,12 @@ def generate_comparison_plots(csv_paths: dict[str, str], output_dir: str, window
         if not rows:
             continue
         train_ep = np.array([int(r["episode"]) for r in rows])
-        eval_ep_crb, eval_crb = _extract_series(rows, "eval_avg_crb")
-        eval_ep_pd, eval_pd = _extract_series(rows, "eval_avg_pd")
-        eval_ep_reward, eval_reward = _extract_series(rows, "eval_avg_reward")
-        use_eval = len(eval_crb) >= 2 and len(eval_pd) >= 2
+        crb = np.array([float(r["avg_crb"]) for r in rows])
         data[label] = {
-            "episodes": eval_ep_crb if use_eval else train_ep,
-            "crb": eval_crb if use_eval else np.array([float(r["avg_crb"]) for r in rows]),
-            "pd": eval_pd if use_eval else np.array([float(r["avg_pd"]) for r in rows]),
-            "reward": eval_reward if len(eval_reward) >= 2 else np.array([float(r["avg_reward"]) for r in rows]),
-            "use_eval": use_eval,
+            "episodes": train_ep,
+            "crb": np.clip(crb, None, 5.0),
+            "pd": np.array([float(r["avg_pd"]) for r in rows]),
+            "reward": np.array([float(r["avg_reward"]) for r in rows]),
         }
     if not data:
         return {}
@@ -77,20 +73,27 @@ def generate_comparison_plots(csv_paths: dict[str, str], output_dir: str, window
         fig, ax = plt.subplots(figsize=(9, 5))
         for label, series in data.items():
             color = _COLORS.get(label, None)
-            if series["use_eval"] and metric != "reward":
-                ax.plot(series["episodes"], series[metric], label=label, color=color, linewidth=2.0)
-            else:
-                w = min(window, max(1, len(series[metric]) // 5))
-                roll_ep, roll_v = _rolling(series[metric], series["episodes"], w)
-                x = series["episodes"] if len(series[metric]) == 1 else roll_ep
-                y = series[metric] if len(series[metric]) == 1 else roll_v
-                ax.plot(x, y, label=label, color=color, linewidth=2.0)
+            w = window
+            if len(series[metric]) < w:
+                w = max(1, len(series[metric]) // 2) or 1
+            roll_ep, roll_v = _rolling(series[metric], series["episodes"], w)
+            x = series["episodes"] if len(series[metric]) == 1 else roll_ep
+            y = series[metric] if len(series[metric]) == 1 else roll_v
+            ax.plot(x, y, label=f"{label} (Rolling-{w})", color=color, linewidth=2.0)
         ax.set_xlabel("Episode")
         ax.set_ylabel(ylabel)
+        
+        if metric == "crb":
+            ax.set_yscale('log')
+            ax.set_ylim(bottom=0.01, top=10.5)
+            ax.set_ylabel("CRB trace (log scale, lower = better)")
+            ax.grid(True, which="both", alpha=0.15)
+        else:
+            ax.grid(True, alpha=0.25)
+
         if metric == "pd":
             ax.set_ylim(-0.05, 1.05)
         ax.set_title(f"MAPPO vs MATD3PG vs MADDPG vs Random Walk — {metric.upper()} convergence")
-        ax.grid(alpha=0.25)
         ax.legend(fontsize=9)
         fig.tight_layout()
         p = str(out / fname)

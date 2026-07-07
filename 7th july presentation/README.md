@@ -80,10 +80,14 @@ Each `output/<algo>_<timestamp>/` contains:
   checkpoints for Random Walk, there's nothing to learn)
 - `history.json`
 
-## Running it
+## Dependencies & Setup
 
-Note: the top folder name has a space, so run these as **scripts**
-(`python "7th july presentation/.../train_x.py"`), not as `-m` modules.
+To run these scripts on any device, install the necessary dependencies from the root directory:
+```bash
+pip install -r requirements.txt
+```
+
+Note: Device-specific folders (like `.python_packages` and `.mplconfig`) and heavy generated outputs (checkpoints, CSV training logs, and PNG plots) are configured in `.gitignore` so they won't clutter the GitHub repository.
 
 Run everything and get the comparison plots in one go:
 ```bash
@@ -97,11 +101,3 @@ python "7th july presentation/matd3pg/train_matd3pg.py"   --episodes 300 --steps
 python "7th july presentation/maddpg/train_maddpg.py"     --episodes 300 --steps 40
 python "7th july presentation/random_walk/run_random_walk.py" --episodes 300 --steps 40
 ```
-
-Shared flags: `--episodes` (default 300), `--steps` per episode (default
-40), `--n-agents` (default 2), `--alpha-pd` (Pd vs. CRB reward weight,
-default 0.5), `--seed` (default 42), `--output-root` (per-script only).
-
-Dependencies: `numpy`, `scipy`, `torch`, `matplotlib` (matplotlib needed
-a rebuild against NumPy 2.x in this environment — if you hit
-`AttributeError: _ARRAY_API not found`, run `pip install --upgrade matplotlib`).
