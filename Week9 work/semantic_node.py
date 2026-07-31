@@ -9,10 +9,10 @@ from enum import Enum
 import numpy as np
 
 class SemanticNodeType(Enum):
-    BASE_STATION = "Base Station (BS)"
+    BASE_STATION = "Base Station (B)"
     RIS_UAV = "RIS-mounted UAV (R)"
     UAV_JAMMER = "UAV Jammer (J)"
-    NEAR_USER = "Vehicle / Near User (V)"
+    NEAR_USER = "Target / Near User (T)"
     FAR_USER = "Mobile User / Distant User (U)"
     EAVESDROPPER = "Eavesdropper (E)"
 
@@ -26,6 +26,7 @@ class SemanticMetrics:
     semantic_rate_suts: float = 0.0       # Semantic rate (semantic units / sec / Hz)
     semantic_distortion: float = 0.0     # D = 1 - S(SINR)
     sensing_accuracy: float = 0.0        # Semantic sensing target accuracy in [0, 1]
+    crb: float = 0.0                     # Cramér-Rao Bound (CRB) for sensing estimation
 
 class SemanticNode:
     """
@@ -87,6 +88,13 @@ class SemanticNode:
         exponent = np.clip(exponent, -50.0, 50.0)
         return float(1.0 / (1.0 + np.exp(exponent)))
 
+    def compute_crb(self, snr_radar_linear: float) -> float:
+        """
+        Computes Cramér-Rao Bound (CRB) for location estimation.
+        Modelled as inversely proportional to radar sensing SNR.
+        """
+        return float(1.0 / max(snr_radar_linear, 1e-12))
+
     def evaluate_metrics(
         self, sinr_linear: float, snr_radar_linear: float = 1.0, bandwidth_hz: float = 1.0e6
     ) -> SemanticMetrics:
@@ -96,6 +104,7 @@ class SemanticNode:
         s_rate = self.compute_semantic_rate(sinr_linear, bandwidth_hz)
         s_dist = 1.0 - s_score
         sense_acc = self.compute_sensing_accuracy(snr_radar_linear)
+        crb_val = self.compute_crb(snr_radar_linear)
 
         return SemanticMetrics(
             sinr_db=sinr_db,
@@ -103,4 +112,5 @@ class SemanticNode:
             semantic_rate_suts=s_rate,
             semantic_distortion=s_dist,
             sensing_accuracy=sense_acc,
+            crb=crb_val,
         )

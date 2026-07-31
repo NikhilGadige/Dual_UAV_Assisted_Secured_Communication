@@ -65,7 +65,7 @@ def test_pd_noma():
 
 def test_semantic_nodes():
     print("=== 3. Testing Semantic-Aware Nodes ===")
-    node = SemanticNode("V1", SemanticNodeType.NEAR_USER, np.array([10.0, 10.0, 1.5]))
+    node = SemanticNode("T1", SemanticNodeType.NEAR_USER, np.array([10.0, 10.0, 1.5]))
     
     sinr_low = 0.5  # ~ -3 dB
     sinr_high = 100.0 # ~ 20 dB
@@ -97,23 +97,57 @@ def test_system_model_integration():
         
     print("\n--- Power-Domain NOMA & SIC Results ---")
     noma = results["noma"]
-    print(f"  SIC Successful at Near User: {noma['sic_successful']}")
-    print(f"  Near User SINR: {10*np.log10(noma['sinr_near']):.2f} dB")
-    print(f"  Far User SINR: {10*np.log10(noma['sinr_far']):.2f} dB")
+    print(f"  SIC Successful at Near User (Target T): {noma['sic_successful']}")
+    print(f"  Near User (Target T) SINR: {10*np.log10(noma['sinr_near']):.2f} dB")
+    print(f"  Far User (Mobile User U) SINR: {10*np.log10(noma['sinr_far']):.2f} dB")
     
     print("\n--- Semantic Performance ---")
     sem = results["semantic_performance"]
     for user, metrics in sem.items():
         print(f"  {user}: SINR = {metrics['sinr_db']:.2f} dB | Similarity = {metrics['semantic_similarity']:.4f} | Semantic Rate = {metrics['semantic_rate_suts']:.2e} suts/s | Distortion = {metrics['semantic_distortion']:.4f}")
         
-    print("\n--- Sensing Performance at UAV Jammer ---")
+    print("\n--- Sensing Performance at UAV Jammer J ---")
     sense = results["sensing_performance"]
-    print(f"  Monostatic Radar SNR: {sense['Jammer_Monostatic_Radar_SNR_dB']:.2f} dB")
-    print(f"  Sensing Accuracy: {sense['Jammer_Sensing_Accuracy']:.4f}")
+    print(f"  Target T - SNR: {sense['Target_T']['snr_db']:.2f} dB | Sensing Accuracy: {sense['Target_T']['sensing_accuracy']:.4f} | CRB: {sense['Target_T']['crb']:.4f}")
+    print("  Eavesdroppers:")
+    for eve, metrics in sense["Eavesdroppers"].items():
+        print(f"    {eve} - SNR: {metrics['snr_db']:.2f} dB | Sensing Accuracy: {metrics['sensing_accuracy']:.4f} | CRB: {metrics['crb']:.4f}")
 
     print("\n--- Eavesdropper Performance ---")
     for eve, metrics in results["eavesdroppers"].items():
-        print(f"  {eve}: Intercept SINR = {metrics['sinr_db']:.2f} dB | Semantic Similarity = {metrics['semantic_similarity']:.4f}")
+        print(f"  {eve}:")
+        print(f"    Intercept s_F (Far): SINR = {metrics['sinr_db']:.2f} dB | Similarity = {metrics['semantic_similarity']:.4f} | Rate = {metrics['semantic_rate']:.2e} suts/s")
+        print(f"    Intercept s_N (Near): SINR = {metrics['sinr_near_db']:.2f} dB | Similarity = {metrics['semantic_similarity_near']:.4f} | Rate = {metrics['semantic_rate_near']:.2e} suts/s")
+        
+    print("\n--- Average Secrecy Rate (ASR) Performance (Single Realization) ---")
+    sec = results["secrecy_performance"]
+    print(f"  Target T Secrecy Rate: {sec['secrecy_rate_target']:.2e} suts/s")
+    print(f"  Mobile User U Secrecy Rate: {sec['secrecy_rate_user']:.2e} suts/s")
+    print(f"  Total System Secrecy Rate: {sec['secrecy_rate_total']:.2e} suts/s")
+        
+    print("\n--- Average Secrecy Rate (ASR) Over 100 Episodes ---")
+    avg_sec = sys_model.run_simulation_episodes(
+        num_episodes=100, 
+        w1=0.5, 
+        w2=0.5, 
+        w3=0.5, 
+        w4=0.5, 
+        delta_t=1e10, 
+        delta_e=1e10,
+        pd_threshold_t=0.0,
+        pd_threshold_e=0.0
+    )
+    print(f"  Target T Average Secrecy Rate: {avg_sec['avg_secrecy_rate_target']:.2e} suts/s")
+    print(f"  Mobile User U Average Secrecy Rate: {avg_sec['avg_secrecy_rate_user']:.2e} suts/s")
+    print(f"  Total System Average Secrecy Rate (ASR): {avg_sec['avg_secrecy_rate_total']:.2e} suts/s")
+    print(f"  Average Normalized Secrecy Rate (rs): {avg_sec['avg_normalized_secrecy_rate']:.4f}")
+    print(f"  Average Pd (Target): {avg_sec['avg_pd_target']:.4f} | Average Pd (Eavesdroppers): {avg_sec['avg_pd_eavesdroppers']:.4f}")
+    print(f"  Average Combined Pd: {avg_sec['avg_pd_combined']:.4f}")
+    print(f"  Average CRB (Target): {avg_sec['avg_crb_target']:.2e} | Average CRB (Eavesdroppers): {avg_sec['avg_crb_eavesdroppers']:.2e}")
+    print(f"  Average Multi-Objective Utility (w1*rs + w2*pd): {avg_sec['avg_utility']:.4f}")
+    print(f"  CRB Constraint Satisfaction (Thresholds Target={1e10:.1e}, Eve={1e10:.1e}): {avg_sec['crb_constraint_satisfaction']*100:.1f}%")
+    print(f"  Pd Constraint Satisfaction (Thresholds Target={0.0}, Eve={0.0}): {avg_sec['pd_constraint_satisfaction']*100:.1f}%")
+    print(f"  Overall Joint Satisfaction: {avg_sec['overall_constraint_satisfaction']*100:.1f}%")
         
     print("\n-> Integrated System Model Test PASSED Successfully!\n")
 
