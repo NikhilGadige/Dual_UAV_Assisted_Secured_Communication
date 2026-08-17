@@ -185,10 +185,27 @@ The average secrecy rates for the Near and Far users are computed by subtracting
 The total system secrecy rate is $R_{sec}(t) = R_{sec, T}(t) + R_{sec, U}(t)$.
 
 \subsection{Problem Formulation}
-Our objective is to jointly optimize the trajectories $\{\mathbf{q}_R(t), \mathbf{q}_J(t)\}$ and the power allocation parameters $\{P_{BS}(t), P_J(t), a_F(t)\}$ to maximize the average secrecy rate over the flight duration $T_{total}$, subject to sensing quality, collision avoidance, and transmission power constraints:
+Our objective is to jointly optimize the trajectories $\{\mathbf{q}_R(t), \mathbf{q}_J(t)\}$ and the power allocation parameters $\{P_{BS}(t), P_J(t), a_F(t)\}$ to maximize both the achieved secrecy rate and the target/eavesdropper detection probability of the network, subject to sensing quality, collision avoidance, and transmission power constraints. For a training run consisting of $E$ episodes, let
+\begin{equation}
+    R_{sec}^{(e)} = \frac{1}{T_{total}} \sum_{t=1}^{T_{total}} R_{sec}(t)
+\end{equation}
+denote the average secrecy rate achieved during episode $e \in \{1, \dots, E\}$. Since the secrecy rate and the detection probability operate on different numerical ranges, the secrecy rate is normalized by the maximum value achieved anywhere across the entire run:
+\begin{equation}
+    R_{\max} = \max_{j \in \{1, \dots, E\}} R_{sec}^{(j)}, \qquad
+    \text{ASSR}^{(e)} = \frac{R_{sec}^{(e)}}{R_{\max}} \in [0, 1],
+\end{equation}
+where $\text{ASSR}^{(e)}$ (Average Sum Secrecy Ratio) is the normalized secrecy rate ratio for episode $e$. The combined detection probability for episode $e$ is a weighted sum of the average eavesdropper detection probability $P_{d,E}^{(e)}$ and the Target detection probability $P_{d,T}^{(e)}$:
+\begin{equation}
+    P_d^{(e)} = w_3 P_{d,E}^{(e)} + w_4 P_{d,T}^{(e)}, \qquad w_3 + w_4 = 1,
+\end{equation}
+with $P_{d,E}^{(e)} = \frac{1}{3}\sum_{k=1}^3 P_{d,E_k}^{(e)}$. Both $\text{ASSR}^{(e)}$ and $P_d^{(e)}$ lie in $[0,1]$, so the per-episode multi-objective utility, combining the normalized secrecy performance with the detection probability, is denoted:
+\begin{equation}
+    U^{(e)} \triangleq \lambda_1 \,\text{ASSR}^{(e)} + \lambda_2 \,P_d^{(e)}, \qquad \lambda_1 + \lambda_2 = 1.
+\end{equation}
+The joint optimization problem is therefore to maximize this combined secrecy-and-detection utility, averaged over the run, subject to the Cram\'{e}r-Rao Bound constraint on target localization accuracy, the minimum inter-UAV separation, and the transmit power / NOMA allocation bounds -- none of which change from the original formulation:
 \begin{subequations}
 \begin{align}
-    \max_{\mathbf{q}_R, \mathbf{q}_J, P_{BS}, P_J, a_F} \quad & \frac{1}{T_{total}} \sum_{t=1}^{T_{total}} R_{sec}(t) \\
+    \max_{\mathbf{q}_R, \mathbf{q}_J, P_{BS}, P_J, a_F} \quad & \frac{1}{E} \sum_{e=1}^{E} U^{(e)} = \frac{1}{E} \sum_{e=1}^{E} \left[ \lambda_1 \,\text{ASSR}^{(e)} + \lambda_2 \,P_d^{(e)} \right] \\
     \text{s.t.} \quad & CRB_T(t) \le CRB_{\max}, \quad \forall t, \\
     & \|\mathbf{q}_R(t) - \mathbf{q}_J(t)\| \ge d_{min}, \quad \forall t, \\
     & P_{BS,\min} \le P_{BS}(t) \le P_{BS,\max}, \quad \forall t, \\
@@ -196,7 +213,7 @@ Our objective is to jointly optimize the trajectories $\{\mathbf{q}_R(t), \mathb
     & 0.5 \le a_F(t) \le 0.99, \quad \forall t,
 \end{align}
 \end{subequations}
-where $CRB_{\max} = 1.0 \times 10^8$ and $d_{min} = 10.0$\,m.
+where $CRB_{\max} = 1.0 \times 10^8$ and $d_{min} = 10.0$\,m, matching the original constraint values. Section~\ref{sec:convergence} reports results with $\lambda_1 = \lambda_2 = 0.5$ and $w_3 = w_4 = 0.5$.
 
 \section{Deep Reinforcement Learning Framework}
 To solve the non-convex optimization problem in real-time, we formulate the decision process as a Markov Decision Process (MDP) defined by the tuple $\langle \mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \gamma \rangle$.
@@ -237,6 +254,7 @@ We implement and evaluate five algorithms in the convergence study:
 \end{enumerate}
 
 \section{Performance Evaluation and Convergence Analysis}
+\label{sec:convergence}
 We conduct simulations in Python utilizing PyTorch. The key parameters of the ISAC model are summarized in Table~\ref{tab:parameters}.
 
 \begin{table}[H]
@@ -263,22 +281,24 @@ Maximum Step Distance ($v_{\max}$) & 5.0 m \\
 \end{table}
 
 \subsection{Convergence Comparison}
-The five algorithms were evaluated over training episodes to compare their capability to escape the zero-secrecy landscape. The 100-episode rolling average secrecy rate curves are plotted in Fig.~\ref{fig:rolling_secrecy}.
+The five algorithms were evaluated over training episodes to compare their capability to escape the zero-secrecy landscape. Per the Problem Formulation of Section~\ref{sec:convergence}, the metric that reflects the actual joint optimization objective is the multi-objective utility $U^{(e)} = \lambda_1 \,\text{ASSR}^{(e)} + \lambda_2 \,P_d^{(e)}$, not the raw secrecy rate alone: raw secrecy and the detection probability live on different scales, and plotting secrecy in isolation silently drops the sensing/detection term of the objective. The 100-episode rolling average of $U^{(e)}$ (with $\lambda_1 = \lambda_2 = 0.5$, $w_3 = w_4 = 0.5$) is plotted in Fig.~\ref{fig:rolling_secrecy} for the four RL algorithms (MAPPO, MATD3PG, SAC, and Single Agent TD3PG); Random Walk is excluded as its utility is negligible throughout.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.7\textwidth]{output_final/rolling_secrecy_comparison.png}
-    \caption{Convergence comparison showing the rolling 100-episode average secrecy rate (M-suts/s) for all four RL algorithms (MAPPO, MATD3PG, SAC, and Single Agent TD3PG) on the Week 9 system model.}
+    \caption{Convergence comparison showing the rolling 100-episode average multi-objective utility $U = \lambda_1 \,\text{ASSR} + \lambda_2 \,P_d$ for all four RL algorithms (MAPPO, MATD3PG, SAC, and Single Agent TD3PG) on the Week 9 system model.}
     \label{fig:rolling_secrecy}
 \end{figure}
 
 The convergence curves demonstrate that:
 \begin{itemize}
-    \item Random Walk fails to establish secure communication, keeping secrecy rate close to zero (below $10^{-6}$ M-suts/s).
-    \item Single-Agent SAC exhibits the fastest convergence, reaching a high secrecy rate of **$0.466$ M-suts/s** ($4.66 \times 10^5$ suts/s) within 40 episodes. The maximum entropy formulation encourages continuous exploration, allowing the agent to quickly discover the optimal state where the RIS is positioned near the users and the jammer is positioned far away.
-    \item Single-Agent TD3PG also successfully converges, achieving a positive secrecy rate of $0.003$ M-suts/s by episode 40.
-    \item MATD3PG and MAPPO exhibit slower, steady learning curves (common in multi-agent environments due to non-stationarity), but show consistent improvement as training progresses.
+    \item Random Walk fails to establish secure communication, keeping raw secrecy rate close to zero (below $10^{-6}$ M-suts/s throughout the run), so its utility never rises appreciably above zero.
+    \item MATD3PG converges fastest, reaching roughly half its eventual peak utility by around episode 140 and settling into a stable rolling-average utility of about $0.13$ for the remainder of training.
+    \item Single-Agent SAC converges only slightly slower (around episode 640), reaching a comparable steady-state rolling-average utility of about $0.14$, the highest sustained value among all algorithms, consistent with its raw secrecy rate also peaking highest (up to $0.61$ M-suts/s) among the compared methods.
+    \item MAPPO takes considerably longer to ramp up (around episode 1350) and remains the most volatile of the four, swinging between roughly $0.07$ and its peak of $0.20$ utility, and ending training around $0.11$ -- higher peak potential, but less stable than MATD3PG or SAC over a long run.
+    \item Single-Agent TD3PG converges early (around episode 300) but plateaus at the lowest steady-state utility of the four, around $0.06$, reflecting a comparatively weaker balance of secrecy and detection performance once its policy stabilizes.
 \end{itemize}
+These results, computed over a full $8000$-episode training run per algorithm, revise the earlier raw-secrecy-only reading of this experiment: SAC and MATD3PG -- not MAPPO -- sustain the strongest joint secrecy/sensing utility once both objective terms are accounted for, and MAPPO's high raw secrecy rate does not translate into a proportionally higher or more stable combined utility.
 
 \section{Conclusion}
 In this paper, we investigated joint trajectory and power optimization for secure multi-agent UAV networks under an integrated sensing and communication (ISAC) architecture. By normalizing the observation space and incorporating direct SNR-JNR guidance, we successfully resolved training saturation and escaped deceptive reward local minima. We provided a head-to-head comparison of five reinforcement learning paradigms. The simulation results demonstrated that continuous-action maximum-entropy algorithms (such as SAC) are highly suited for secure ISAC networks, achieving fast convergence and establishing high system secrecy rates.

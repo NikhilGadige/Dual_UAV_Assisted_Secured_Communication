@@ -121,8 +121,6 @@ class Week9SystemModel:
             g_far=g_total_far,
             jamming_power_near=jamming_power_near,
             jamming_power_far=jamming_power_far,
-            lambda1=self.nodes["T"].lambda1,
-            lambda2=self.nodes["T"].lambda2,
         )
 
         # 5. Eavesdropper SINR evaluation (E1, E2, E3 intercepting signals)

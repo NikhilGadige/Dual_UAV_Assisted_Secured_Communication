@@ -873,156 +873,101 @@ def train_matd3pg(env, num_episodes=150, steps_per_episode=50):
     return history
 
 # (E) MAPPO (Proposed Multi-Agent PPO)
-def train_mappo(env, num_episodes=150, steps_per_episode=50):
+def train_mappo(env, num_episodes=150, steps_per_episode=50, episodes_per_update=8,
+                 entropy_coef=0.01, max_grad_norm=0.5, actor_lr=2.5e-4, critic_lr=2.5e-4):
+    """
+    MAPPO training loop.
+
+    Stability note: earlier revisions updated the policy from a single
+    episode's 50-step on-policy rollout, with no gradient clipping and no
+    entropy bonus. That produced very high-variance policy updates (visible
+    as large oscillations in the rolling-average utility, unlike the
+    off-policy, replay-buffer-based SAC/MATD3PG baselines which update
+    every step from a large, diverse buffer). This version accumulates
+    `episodes_per_update` episodes into a larger on-policy rollout before
+    each PPO update (reduces gradient variance), clips gradients to
+    `max_grad_norm` (bounds the size of any single update), and adds a small
+    entropy bonus (keeps exploration from collapsing prematurely) --
+    standard PPO stabilization practice for small on-policy batch sizes.
+    """
     print("\n--- Training MAPPO (Proposed Algorithm) ---")
     history = []
-    
+
     agent_dims = [3, 3, 3]
-    
+
     # Models
     # 3 Gaussian Actor Networks
     actors = [GaussianActor(env.state_dim, dim) for dim in agent_dims]
     # Centralized Critic Network (evaluates state value)
     critic = ValueNetwork(env.state_dim)
-    
-    actor_opts = [optim.Adam(actor.parameters(), lr=3e-4) for actor in actors]
-    critic_opt = optim.Adam(critic.parameters(), lr=3e-4)
-    
+
+    actor_opts = [optim.Adam(actor.parameters(), lr=actor_lr) for actor in actors]
+    critic_opt = optim.Adam(critic.parameters(), lr=critic_lr)
+
     # MAPPO Hyperparameters
     gamma = 0.95
     gae_lambda = 0.95
     ppo_epochs = 5
     batch_size = 64
     clip_epsilon = 0.2
-    
+
+    # Rollout buffer, accumulated across `episodes_per_update` episodes
+    buf_states, buf_actions, buf_rewards, buf_log_probs, buf_values = [], [], [], [], []
+    buf_episode_bounds = []  # (start_idx, end_idx, bootstrap_value) per episode, for per-episode GAE
+
     for ep in range(num_episodes):
-        # Collect trajectories for 1 episode
-        states = []
-        actions = []
-        rewards = []
-        log_probs = []
-        values = []
-        
+        # Collect trajectory for 1 episode
+        ep_states, ep_actions, ep_rewards, ep_log_probs, ep_values = [], [], [], [], []
+
         state = env.reset()
         ep_reward = 0.0
         metrics = {"secrecy_total": [], "secrecy_target": [], "secrecy_user": [],
                    "pd_target": [], "pd_eaves": [], "crb_target": [],
                    "p_bs_tx": [], "p_jam_tx": [], "noma_a_far": [], "joint_satisfied": []}
-                   
+
         for step in range(steps_per_episode):
             state_t = torch.FloatTensor(state).unsqueeze(0)
-            
+
             # Centralized value prediction
             with torch.no_grad():
                 val = critic(state_t).item()
-                
+
             # Sample actions and log_probs for each agent
             act_list = []
             log_prob_list = []
-            
+
             for i, actor in enumerate(actors):
                 with torch.no_grad():
                     act_indiv_t, log_prob_indiv_t = actor.sample(state_t, reparameterize=False)
                     act_list.append(act_indiv_t.numpy()[0])
                     log_prob_list.append(log_prob_indiv_t.item())
-                    
+
             joint_action = np.concatenate(act_list)
             next_state, reward, _, _, info = env.step(joint_action)
-            
-            states.append(state)
-            actions.append(joint_action)
-            rewards.append(reward)
-            log_probs.append(log_prob_list) # individual log probabilities
-            values.append(val)
-            
+
+            ep_states.append(state)
+            ep_actions.append(joint_action)
+            ep_rewards.append(reward)
+            ep_log_probs.append(log_prob_list)  # individual log probabilities
+            ep_values.append(val)
+
             state = next_state
             ep_reward += reward
             for k in metrics:
                 metrics[k].append(info[k])
-                
-        # Append target state value for GAE
+
+        # Bootstrap value for GAE at the end of this episode's trajectory
         state_t = torch.FloatTensor(state).unsqueeze(0)
         with torch.no_grad():
             last_value = critic(state_t).item()
-        values.append(last_value)
-        
-        # Calculate Returns and Advantages using GAE
-        returns = []
-        advantages = []
-        gae = 0.0
-        for step in reversed(range(steps_per_episode)):
-            delta = rewards[step] + gamma * values[step + 1] - values[step]
-            gae = delta + gamma * gae_lambda * gae
-            advantages.insert(0, gae)
-            returns.insert(0, gae + values[step])
-            
-        # Convert list to tensors
-        states_t = torch.FloatTensor(np.array(states))
-        actions_t = torch.FloatTensor(np.array(actions))
-        old_log_probs_t = torch.FloatTensor(np.array(log_probs))
-        returns_t = torch.FloatTensor(np.array(returns)).unsqueeze(-1)
-        advantages_t = torch.FloatTensor(np.array(advantages)).unsqueeze(-1)
-        
-        # Normalize advantages
-        advantages_t = (advantages_t - advantages_t.mean()) / (advantages_t.std() + 1e-8)
-        
-        # PPO Update epochs
-        dataset_size = len(states)
-        for epoch in range(ppo_epochs):
-            # Shuffle indices
-            indices = np.arange(dataset_size)
-            np.random.shuffle(indices)
-            
-            for start in range(0, dataset_size, batch_size):
-                batch_idx = indices[start:start+batch_size]
-                if len(batch_idx) == 0:
-                    continue
-                    
-                states_b = states_t[batch_idx]
-                actions_b = actions_t[batch_idx]
-                old_log_probs_b = old_log_probs_t[batch_idx]
-                returns_b = returns_t[batch_idx]
-                advantages_b = advantages_t[batch_idx]
-                
-                # Centralized Critic Update
-                values_pred = critic(states_b)
-                critic_loss = nn.MSELoss()(values_pred, returns_b)
-                
-                critic_opt.zero_grad()
-                critic_loss.backward()
-                critic_opt.step()
-                
-                # Multi-Agent Policy updates
-                for i in range(len(actors)):
-                    # Compute log probabilities of actions_b for agent i
-                    start_idx = sum(agent_dims[:i])
-                    end_idx = start_idx + agent_dims[i]
-                    act_indiv_b = actions_b[:, start_idx:end_idx]
-                    
-                    mean, log_std = actors[i](states_b)
-                    std = log_std.exp()
-                    normal = torch.distributions.Normal(mean, std)
-                    
-                    # Target policy actions are tanh-scaled, mapping back to compute log prob
-                    # Since act_indiv_b is tanh(x), we compute arctanh(act_indiv_b)
-                    # For stability: arctanh(y) = 0.5 * log((1+y)/(1-y))
-                    y_clamped = torch.clamp(act_indiv_b, -0.999, 0.999)
-                    x_t_b = 0.5 * torch.log((1.0 + y_clamped) / (1.0 - y_clamped))
-                    
-                    log_prob_indiv_b = normal.log_prob(x_t_b) - torch.log(1.0 - act_indiv_b.pow(2) + 1e-6)
-                    log_prob_indiv_b = log_prob_indiv_b.sum(dim=-1, keepdim=True)
-                    
-                    # We compute ratio of joint policies
-                    # For simplicity, we approximate agent i's ratio
-                    ratio = torch.exp(log_prob_indiv_b - old_log_probs_b[:, i:i+1])
-                    surr1 = ratio * advantages_b
-                    surr2 = torch.clamp(ratio, 1.0 - clip_epsilon, 1.0 + clip_epsilon) * advantages_b
-                    actor_loss = -torch.min(surr1, surr2).mean()
-                    
-                    actor_opts[i].zero_grad()
-                    actor_loss.backward()
-                    actor_opts[i].step()
-                    
+
+        buf_episode_bounds.append((len(buf_states), len(buf_states) + steps_per_episode, last_value))
+        buf_states.extend(ep_states)
+        buf_actions.extend(ep_actions)
+        buf_rewards.extend(ep_rewards)
+        buf_log_probs.extend(ep_log_probs)
+        buf_values.extend(ep_values)
+
         avg_row = [
             ep + 1, ep_reward,
             np.mean(metrics["secrecy_total"]), np.mean(metrics["secrecy_target"]), np.mean(metrics["secrecy_user"]),
@@ -1031,14 +976,108 @@ def train_mappo(env, num_episodes=150, steps_per_episode=50):
             np.mean(metrics["joint_satisfied"])
         ]
         history.append(avg_row)
-        
+
+        # Only run a PPO update once every `episodes_per_update` episodes
+        # (or on the final episode), using the accumulated rollout buffer.
+        is_update_step = ((ep + 1) % episodes_per_update == 0) or (ep + 1 == num_episodes)
+        if is_update_step and buf_states:
+            # Per-episode GAE (each episode's advantages/returns computed over
+            # its own trajectory, then concatenated into one training batch)
+            returns, advantages = [], []
+            for start_idx, end_idx, bootstrap_value in buf_episode_bounds:
+                seg_rewards = buf_rewards[start_idx:end_idx]
+                seg_values = buf_values[start_idx:end_idx] + [bootstrap_value]
+                gae = 0.0
+                seg_returns, seg_advantages = [], []
+                for t in reversed(range(len(seg_rewards))):
+                    delta = seg_rewards[t] + gamma * seg_values[t + 1] - seg_values[t]
+                    gae = delta + gamma * gae_lambda * gae
+                    seg_advantages.insert(0, gae)
+                    seg_returns.insert(0, gae + seg_values[t])
+                returns.extend(seg_returns)
+                advantages.extend(seg_advantages)
+
+            # Convert list to tensors
+            states_t = torch.FloatTensor(np.array(buf_states))
+            actions_t = torch.FloatTensor(np.array(buf_actions))
+            old_log_probs_t = torch.FloatTensor(np.array(buf_log_probs))
+            returns_t = torch.FloatTensor(np.array(returns)).unsqueeze(-1)
+            advantages_t = torch.FloatTensor(np.array(advantages)).unsqueeze(-1)
+
+            # Normalize advantages (now computed over a much larger, more
+            # representative batch than a single 50-step episode)
+            advantages_t = (advantages_t - advantages_t.mean()) / (advantages_t.std() + 1e-8)
+
+            # PPO Update epochs
+            dataset_size = len(buf_states)
+            for epoch in range(ppo_epochs):
+                indices = np.arange(dataset_size)
+                np.random.shuffle(indices)
+
+                for start in range(0, dataset_size, batch_size):
+                    batch_idx = indices[start:start + batch_size]
+                    if len(batch_idx) == 0:
+                        continue
+
+                    states_b = states_t[batch_idx]
+                    actions_b = actions_t[batch_idx]
+                    old_log_probs_b = old_log_probs_t[batch_idx]
+                    returns_b = returns_t[batch_idx]
+                    advantages_b = advantages_t[batch_idx]
+
+                    # Centralized Critic Update
+                    values_pred = critic(states_b)
+                    critic_loss = nn.MSELoss()(values_pred, returns_b)
+
+                    critic_opt.zero_grad()
+                    critic_loss.backward()
+                    nn.utils.clip_grad_norm_(critic.parameters(), max_grad_norm)
+                    critic_opt.step()
+
+                    # Multi-Agent Policy updates
+                    for i in range(len(actors)):
+                        # Compute log probabilities of actions_b for agent i
+                        start_idx = sum(agent_dims[:i])
+                        end_idx = start_idx + agent_dims[i]
+                        act_indiv_b = actions_b[:, start_idx:end_idx]
+
+                        mean, log_std = actors[i](states_b)
+                        std = log_std.exp()
+                        normal = torch.distributions.Normal(mean, std)
+
+                        # Target policy actions are tanh-scaled, mapping back to compute log prob
+                        # Since act_indiv_b is tanh(x), we compute arctanh(act_indiv_b)
+                        # For stability: arctanh(y) = 0.5 * log((1+y)/(1-y))
+                        y_clamped = torch.clamp(act_indiv_b, -0.999, 0.999)
+                        x_t_b = 0.5 * torch.log((1.0 + y_clamped) / (1.0 - y_clamped))
+
+                        log_prob_indiv_b = normal.log_prob(x_t_b) - torch.log(1.0 - act_indiv_b.pow(2) + 1e-6)
+                        log_prob_indiv_b = log_prob_indiv_b.sum(dim=-1, keepdim=True)
+                        entropy_b = normal.entropy().sum(dim=-1, keepdim=True)
+
+                        # We compute ratio of joint policies
+                        # For simplicity, we approximate agent i's ratio
+                        ratio = torch.exp(log_prob_indiv_b - old_log_probs_b[:, i:i + 1])
+                        surr1 = ratio * advantages_b
+                        surr2 = torch.clamp(ratio, 1.0 - clip_epsilon, 1.0 + clip_epsilon) * advantages_b
+                        actor_loss = -torch.min(surr1, surr2).mean() - entropy_coef * entropy_b.mean()
+
+                        actor_opts[i].zero_grad()
+                        actor_loss.backward()
+                        nn.utils.clip_grad_norm_(actors[i].parameters(), max_grad_norm)
+                        actor_opts[i].step()
+
+            # Clear the rollout buffer after the update (on-policy)
+            buf_states, buf_actions, buf_rewards, buf_log_probs, buf_values = [], [], [], [], []
+            buf_episode_bounds = []
+
         if (ep + 1) % 20 == 0:
             roll_reward = np.mean([row[1] for row in history[-100:]])
             roll_secrecy = np.mean([row[2] for row in history[-100:]])
             print(f"Episode {ep+1}/{num_episodes} | Reward: {ep_reward:.2f} (Rolling100: {roll_reward:.2f}) | "
                   f"Secrecy Rate: {avg_row[2]/1e6:.6f} M-suts/s (Rolling100: {roll_secrecy/1e6:.6f} M-suts/s) "
                   f"({avg_row[2]:.2f} suts/s (Rolling100: {roll_secrecy:.2f} suts/s))")
-            
+
     save_history_to_csv(history, "mappo_history.csv")
     plot_individual_convergence(history, "MAPPO")
     return history
@@ -1124,21 +1163,40 @@ def generate_comparison_plots(mappo_hist, matd3pg_hist, sac_hist, td3pg_hist, rw
     plt.savefig(comparison_sensing_path, dpi=150)
     plt.close()
     
-    # 4. Pure Rolling Average Secrecy Rate Comparison (excluding Random Walk)
+    # 4. Multi-Objective Utility Comparison (excluding Random Walk): this is
+    # the figure referenced by report_week9.tex (Problem Formulation /
+    # Convergence Analysis). Per episode e, secrecy is normalized by the
+    # maximum secrecy achieved anywhere in that algorithm's run (ASSR), then
+    # combined with the detection probability P_d, matching the joint
+    # secrecy/sensing optimization objective U^(e) = lambda1*ASSR^(e) + lambda2*P_d^(e):
+    #   ASSR^(e) = R_sec_total^(e) / max_j R_sec_total^(j)
+    #   P_d^(e)  = w3 * pd_eaves^(e) + w4 * pd_target^(e)
+    #   U^(e)    = lambda1 * ASSR^(e) + lambda2 * P_d^(e)
+    LAMBDA1_ASSR, LAMBDA2_PD = 0.5, 0.5
+    W3_PD_EAVES, W4_PD_TARGET = 0.5, 0.5
+
     plt.figure(figsize=(10, 6))
     for name, (color, hist) in hists.items():
         if name == 'Random Walk':
             continue
-        raw_vals = [r[2]/1e6 for r in hist]
-        roll_vals = rolling_average(raw_vals, 100)
+        secrecy_vals = np.array([r[2] for r in hist], dtype=float)
+        pd_target_vals = np.array([r[5] for r in hist], dtype=float)
+        pd_eaves_vals = np.array([r[6] for r in hist], dtype=float)
+
+        r_max = secrecy_vals.max() if secrecy_vals.max() > 1e-12 else 1.0
+        assr_vals = secrecy_vals / r_max
+        pd_combined_vals = W3_PD_EAVES * pd_eaves_vals + W4_PD_TARGET * pd_target_vals
+        utility_vals = LAMBDA1_ASSR * assr_vals + LAMBDA2_PD * pd_combined_vals
+
+        roll_vals = rolling_average(list(utility_vals), 100)
         plt.plot(episodes, roll_vals, label=name, color=color, linewidth=2)
-        
-    plt.title('Average Secrecy Rate Convergence Comparison (Rolling 100 Average)')
+
+    plt.title('Multi-Objective Utility Convergence Comparison (Rolling 100 Average)')
     plt.xlabel('Episode')
-    plt.ylabel('Rolling Average Secrecy Rate (M-suts/s)')
+    plt.ylabel(r'Rolling Average Utility ($\lambda_1$ ASSR $+\ \lambda_2\ P_d$)')
     plt.grid(True)
     plt.legend()
-    
+
     comparison_rolling_secrecy_path = os.path.join(OUTPUT_DIR, "rolling_secrecy_comparison.png")
     plt.savefig(comparison_rolling_secrecy_path, dpi=150)
     plt.close()

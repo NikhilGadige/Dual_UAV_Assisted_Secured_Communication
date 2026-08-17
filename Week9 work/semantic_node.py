@@ -8,6 +8,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 import numpy as np
 
+try:
+    from .deepsc_lookup import semantic_similarity_from_sinr_db
+except ImportError:
+    from deepsc_lookup import semantic_similarity_from_sinr_db
+
 class SemanticNodeType(Enum):
     BASE_STATION = "Base Station (B)"
     RIS_UAV = "RIS-mounted UAV (R)"
@@ -40,8 +45,6 @@ class SemanticNode:
         position: np.ndarray,
         semantic_unit_length_m: int = 10,   # M: number of semantic concepts
         channel_symbol_length_k: int = 15,  # K: number of transmitted channel symbols
-        lambda1: float = 0.3,               # Logistic shape param for semantic similarity
-        lambda2: float = -0.5,              # Logistic threshold param for semantic similarity
     ):
         self.node_id = node_id
         self.node_type = node_type
@@ -49,8 +52,6 @@ class SemanticNode:
         self.m_concepts = semantic_unit_length_m
         self.k_symbols = channel_symbol_length_k
         self.compression_ratio = self.k_symbols / max(1, self.m_concepts)
-        self.lambda1 = lambda1
-        self.lambda2 = lambda2
 
     def update_position(self, new_position: np.ndarray):
         """Update 3D node coordinates."""
@@ -58,13 +59,14 @@ class SemanticNode:
 
     def compute_semantic_similarity(self, sinr_linear: float) -> float:
         """
-        Computes semantic similarity score S(SINR) in range [0, 1].
-        S(SINR_dB) = 1 / (1 + exp(-(lambda1 * SINR_dB + lambda2)))
+        Computes semantic similarity score S(SINR) in range [0, 1] by
+        interpolating the SINR -> similarity table produced by evaluating a
+        trained DeepSC model (Xie et al., transformer-based joint
+        source-channel coding) across a grid of SINR values. See
+        train_deepsc.py / deepsc_lookup.py.
         """
         sinr_db = 10.0 * np.log10(max(sinr_linear, 1e-12))
-        exponent = -(self.lambda1 * sinr_db + self.lambda2)
-        exponent = np.clip(exponent, -50.0, 50.0)
-        return float(1.0 / (1.0 + np.exp(exponent)))
+        return semantic_similarity_from_sinr_db(sinr_db)
 
     def compute_semantic_rate(
         self, sinr_linear: float, bandwidth_hz: float = 1.0e6

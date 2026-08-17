@@ -62,7 +62,7 @@ $$s = \sqrt{a_N P_B} s_N + \sqrt{a_F P_B} s_F \quad (a_F + a_N = 1, \; a_F > a_N
 
 ### C. Semantic Communication & Sensing Metrics
 - **Semantic Similarity Score $S(\text{SINR})$**:
-  $$S(\text{SINR}) = \frac{1}{1 + \exp\left(-(\lambda_1 \cdot \text{SINR}_{\text{dB}} + \lambda_2)\right)}$$
+  Computed by interpolating an SINR $\to$ similarity table produced by evaluating an actual **trained DeepSC model** (Xie et al., 2021 - Transformer semantic encoder/decoder + dense channel encoder/decoder + AWGN channel) across a grid of SINR values, rather than a hand-fitted closed-form curve. See Section 5 below.
 
 - **Semantic Rate $R_{\text{sem}}$ (suts/s)**:
   $$R_{\text{sem}} = B \cdot \left(\frac{M}{K}\right) \cdot S(\text{SINR}) \cdot \log_2(1 + \text{SINR})$$
@@ -83,6 +83,14 @@ Week9 work/
 │── noma_module.py            # Power-Domain NOMA and SIC decoding engine
 │── semantic_node.py          # Semantic-aware node dataclass & metric functions
 │── system_model.py           # Full system integration for Week 9 ISAC network
+│── deepsc_model.py           # DeepSC architecture (Transformer semantic encoder/decoder,
+│                              #   dense channel encoder/decoder, AWGN channel)
+│── deepsc_corpus.py          # Small synthetic text corpus used to train DeepSC
+│── train_deepsc.py           # Trains DeepSC and generates deepsc_lookup_table.csv
+│── deepsc_lookup.py          # Torch-free loader/interpolator for the lookup table,
+│                              #   used by semantic_node.py / noma_module.py at runtime
+│── deepsc_lookup_table.csv   # Generated SINR(dB) -> semantic similarity / word accuracy table
+│── deepsc_model.pt           # Trained DeepSC checkpoint (weights + vocab)
 │── test_week9_model.py       # Verification test suite
 └── README.md                 # Module documentation
 ```
@@ -94,3 +102,27 @@ To run the verification suite:
 ```bash
 python "Week9 work/test_week9_model.py"
 ```
+
+---
+
+## 5. DeepSC Semantic Similarity Model
+
+Rather than approximating $S(\text{SINR})$ with a hand-tuned sigmoid, this module trains and evaluates an actual **DeepSC** model (Xie et al., "Deep Learning Enabled Semantic Communication Systems", IEEE TSP 2021) and uses its measured performance to drive every semantic-similarity computation in the system model.
+
+**Pipeline**: `Semantic Source -> Transformer Semantic Encoder -> Dense Channel Encoder (power-normalized) -> AWGN Channel -> Dense Channel Decoder -> Transformer Semantic Decoder -> Recovered Sentence`
+
+- `deepsc_model.py` implements this architecture in PyTorch, plus a `Vocabulary` helper.
+- `deepsc_corpus.py` generates a small, reproducible synthetic sentence corpus (template combinations over an ISAC-flavored vocabulary) to train on, so the pipeline runs in minutes without downloading a large external dataset.
+- `train_deepsc.py` trains DeepSC end-to-end (cross-entropy reconstruction loss, SINR sampled randomly per batch over a realistic training range), then evaluates the trained model at a grid of fixed SINR values. At each grid point it greedily decodes the validation sentences through the full noisy pipeline and measures:
+  - **semantic_similarity**: cosine similarity between the semantic encoder's sentence embedding of the original sentence and of the reconstructed sentence (used here as a self-contained proxy for the BERT-based sentence similarity used in the original paper, avoiding an external model download), rescaled to $[0, 1]$.
+  - **word_accuracy**: token-level reconstruction accuracy (diagnostic).
+
+  The result is written to `deepsc_lookup_table.csv`, and the trained weights to `deepsc_model.pt`.
+- `deepsc_lookup.py` loads that CSV and linearly interpolates it (flat outside the trained range) — this is what `semantic_node.py` and `noma_module.py` call at simulation time. It has no torch dependency, so running the ISAC system model does **not** require loading DeepSC itself, only its precomputed performance table.
+
+**Regenerating the table** (only needed if the corpus, architecture, or training range changes):
+```bash
+python "Week9 work/train_deepsc.py"
+```
+
+**Note on training range**: the model is trained/evaluated over SINRs from -20 dB to +20 dB. Training across an unrealistically wide range (e.g. down to -100 dB, to try to match some of this system's very low-SINR eavesdropper/sensing links) was tried and rejected — at those SINRs no scheme can recover the signal, so those batches injected near-random gradients that destabilized the shared encoder/decoder weights and hurt convergence even at high SINR. Links whose SINR falls below -20 dB are flat-extrapolated to the table's near-total-failure floor, which is a physically reasonable stand-in (the channel is effectively unusable there) rather than a modeling artifact.

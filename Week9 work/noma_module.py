@@ -7,6 +7,11 @@ Successive Interference Cancellation (SIC) decoding, and SINR calculations.
 import numpy as np
 from typing import Dict, Tuple
 
+try:
+    from .deepsc_lookup import semantic_similarity_from_sinr_db
+except ImportError:
+    from deepsc_lookup import semantic_similarity_from_sinr_db
+
 EPSILON = 1e-12
 
 class PowerDomainNOMA:
@@ -50,12 +55,10 @@ class PowerDomainNOMA:
         g_far: float,
         jamming_power_near: float = 0.0,
         jamming_power_far: float = 0.0,
-        lambda1: float = 0.3,
-        lambda2: float = -0.5,
     ) -> Dict[str, float]:
         """
         Computes SINR for Far User and Near User (with semantic-aware SIC).
-        
+
         Parameters:
         -----------
         g_near : float
@@ -66,11 +69,7 @@ class PowerDomainNOMA:
             Received jamming interference power at Near User.
         jamming_power_far : float
             Received jamming interference power at Far User.
-        lambda1 : float
-            Semantic metric scaling parameter.
-        lambda2 : float
-            Semantic metric threshold parameter.
-            
+
         Returns:
         --------
         dict containing:
@@ -96,11 +95,10 @@ class PowerDomainNOMA:
         denom_near_sic = p_near * g_near + jamming_power_near + self.noise_power
         sinr_near_sic = (p_far * g_near) / max(denom_near_sic, EPSILON)
 
-        # Compute semantic similarity of Far User signal decoded at Near User
+        # Compute semantic similarity of Far User signal decoded at Near User,
+        # via the trained DeepSC model's SINR -> similarity lookup table.
         sinr_near_sic_db = 10.0 * np.log10(max(sinr_near_sic, EPSILON))
-        exponent = -(lambda1 * sinr_near_sic_db + lambda2)
-        exponent = np.clip(exponent, -50.0, 50.0)
-        similarity_near_sic = float(1.0 / (1.0 + np.exp(exponent)))
+        similarity_near_sic = semantic_similarity_from_sinr_db(sinr_near_sic_db)
 
         # Check semantic-aware SIC condition (always True as far user signal has been decoded already)
         sic_successful = True
