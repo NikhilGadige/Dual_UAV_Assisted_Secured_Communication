@@ -1117,11 +1117,39 @@ def train_mappo(env, num_episodes=150, steps_per_episode=50, episodes_per_update
     return history
 
 # --- 5. Generate Combined Comparison Plots ---
+ALGORITHM_LEGEND_ORDER = [
+    'MAPPO (Proposed)',
+    'MATD3PG',
+    'SASAC',
+    'SATD3PG',
+    'Random Walk',
+]
+
+
+def summarize_algorithms_for_report(hists):
+    """Print the final rolling-100 metrics to diagnose ordering problems."""
+    print("\nFinal rolling-100 comparison summary (uncertain eavesdropper model):")
+    for name in ALGORITHM_LEGEND_ORDER:
+        _, hist = hists[name]
+        secrecy_vals = np.asarray([r[2] for r in hist], dtype=float)
+        pd_target_vals = np.asarray([r[5] for r in hist], dtype=float)
+        pd_eaves_vals = np.asarray([r[6] for r in hist], dtype=float)
+        crb_target_vals = np.asarray([r[7] for r in hist], dtype=float)
+
+        assr_vals, pd_combined_vals, utility_vals, _, _ = compute_assr_pd_utility(
+            secrecy_vals, pd_target_vals, pd_eaves_vals, crb_target_vals
+        )
+        assr_100 = np.mean(assr_vals[-100:])
+        pd_100 = np.mean(pd_combined_vals[-100:])
+        util_100 = np.mean(utility_vals[-100:])
+        print(f"  - {name:>12}: ASSR={assr_100:.4f}, DetectionProb={pd_100:.4f}, Utility={util_100:.4f}")
+
+
 def generate_comparison_plots(mappo_hist, matd3pg_hist, sac_hist, td3pg_hist, rw_hist):
     print("\n--- Generating Combined Comparison Plots ---")
-    
+
     episodes = [r[0] for r in mappo_hist]
-    
+
     # Helper for rolling average calculation
     def rolling_average(data, window=100):
         res = []
@@ -1129,45 +1157,51 @@ def generate_comparison_plots(mappo_hist, matd3pg_hist, sac_hist, td3pg_hist, rw
             start = max(0, i - window + 1)
             res.append(np.mean(data[start:i+1]))
         return res
-        
+
     hists = {
         'MAPPO (Proposed)': ('purple', mappo_hist),
         'MATD3PG': ('blue', matd3pg_hist),
         'SASAC': ('green', sac_hist),
         'SATD3PG': ('orange', td3pg_hist),
-        'Random Walk': ('grey', rw_hist)
+        'Random Walk': ('grey', rw_hist),
     }
-    
+
+    # Keep the legend order fixed to the intended comparison hierarchy, but do not
+    # force the underlying curves to match it if the actual simulation results differ.
+    ordered_hist_list = [(name, hists[name]) for name in ALGORITHM_LEGEND_ORDER]
+
     # Compute a global secrecy normalization reference across all algorithms to ensure fair comparison
     all_secrecy_vals = []
-    for name, (color, hist) in hists.items():
+    for name, (_, hist) in ordered_hist_list:
         all_secrecy_vals.extend([r[2] for r in hist])
     global_r_ref = robust_max_reference(all_secrecy_vals)
-    
+
+    summarize_algorithms_for_report(hists)
+
     # 1. ASSR comparison plot
     plt.figure(figsize=(10, 6))
-    for name, (color, hist) in hists.items():
+    for name, (color, hist) in ordered_hist_list:
         secrecy_vals = np.asarray([r[2] for r in hist], dtype=float)
         assr_vals = np.clip(secrecy_vals / global_r_ref, 0.0, 1.0)
         roll_vals = rolling_average(assr_vals, 100)
         linestyle = '--' if name == 'Random Walk' else '-'
         plt.plot(episodes, assr_vals, color=color, alpha=0.15, linestyle=linestyle)
         plt.plot(episodes, roll_vals, label=name, color=color, linewidth=2, linestyle=linestyle)
-        
+
     plt.title('ASSR Convergence Comparison (Rolling 100)')
     plt.xlabel('Episode')
     plt.ylabel('ASSR')
     plt.ylim(-0.05, 1.05)
     plt.grid(True)
-    plt.legend()
-    
+    plt.legend(loc='best')
+
     comparison_assr_path = os.path.join(OUTPUT_DIR, "assr_comparison.png")
     plt.savefig(comparison_assr_path, dpi=150)
     plt.close()
-    
-    # 2. Combined Pd comparison plot
+
+    # 2. Detection probability comparison plot (weighted combined Pd)
     plt.figure(figsize=(10, 6))
-    for name, (color, hist) in hists.items():
+    for name, (color, hist) in ordered_hist_list:
         pd_target_vals = np.asarray([r[5] for r in hist], dtype=float)
         pd_eaves_vals = np.asarray([r[6] for r in hist], dtype=float)
         pd_combined_vals = LAMBDA1_PD_SENSING * pd_eaves_vals + LAMBDA2_PD_SENSING * pd_target_vals
@@ -1175,48 +1209,48 @@ def generate_comparison_plots(mappo_hist, matd3pg_hist, sac_hist, td3pg_hist, rw
         linestyle = '--' if name == 'Random Walk' else '-'
         plt.plot(episodes, pd_combined_vals, color=color, alpha=0.15, linestyle=linestyle)
         plt.plot(episodes, roll_vals, label=name, color=color, linewidth=2, linestyle=linestyle)
-        
-    plt.title('Pd Convergence Comparison (Rolling 100)')
+
+    plt.title('Detection Probability Convergence Comparison (Rolling 100)')
     plt.xlabel('Episode')
-    plt.ylabel('Pd')
+    plt.ylabel('Detection Probability')
     plt.ylim(-0.05, 1.05)
     plt.grid(True)
-    plt.legend()
-    
+    plt.legend(loc='best')
+
     comparison_pd_path = os.path.join(OUTPUT_DIR, "pd_comparison.png")
     plt.savefig(comparison_pd_path, dpi=150)
     plt.close()
-    
+
     # 3. Combined utility comparison plot
     plt.figure(figsize=(10, 6))
-    for name, (color, hist) in hists.items():
+    for name, (color, hist) in ordered_hist_list:
         secrecy_vals = np.asarray([r[2] for r in hist], dtype=float)
         pd_target_vals = np.asarray([r[5] for r in hist], dtype=float)
         pd_eaves_vals = np.asarray([r[6] for r in hist], dtype=float)
         crb_target_vals = np.asarray([r[7] for r in hist], dtype=float)
-        
+
         assr_vals = np.clip(secrecy_vals / global_r_ref, 0.0, 1.0)
         pd_combined_vals = LAMBDA1_PD_SENSING * pd_eaves_vals + LAMBDA2_PD_SENSING * pd_target_vals
         crb_feasible_vals = (crb_target_vals <= CRB_THRESHOLD).astype(float)
-        
+
         utility_vals = (LAMBDA1_ASSR * assr_vals + LAMBDA2_PD * pd_combined_vals) * crb_feasible_vals
         roll_vals = rolling_average(utility_vals, 100)
-        
+
         linestyle = '--' if name == 'Random Walk' else '-'
         plt.plot(episodes, utility_vals, color=color, alpha=0.15, linestyle=linestyle)
         plt.plot(episodes, roll_vals, label=name, color=color, linewidth=2, linestyle=linestyle)
-        
+
     plt.title('Combined Utility Convergence Comparison (Rolling 100)')
     plt.xlabel('Episode')
     plt.ylabel(r'Utility (($0.5$ ASSR $+\ 0.5$ Pd) $\times$ CRB-feasible)')
     plt.ylim(-0.05, 1.05)
     plt.grid(True)
-    plt.legend()
-    
+    plt.legend(loc='best')
+
     comparison_utility_path = os.path.join(OUTPUT_DIR, "convergence_comparison.png")
     plt.savefig(comparison_utility_path, dpi=150)
     plt.close()
-    
+
     print("Comparison plots saved to:")
     print(f"  - {comparison_assr_path}")
     print(f"  - {comparison_pd_path}")
@@ -1244,6 +1278,7 @@ def main():
     
     print(f"===========================================================")
     print(f"Starting Convergence Study on Week 9 System Model")
+    print("Using the current uncertain-location eavesdropper model (not the legacy HPPP model).")
     print(f"Episodes: {episodes} | Steps per Episode: {steps}")
     print(f"===========================================================")
     
