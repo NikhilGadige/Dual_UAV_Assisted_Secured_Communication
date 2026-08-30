@@ -19,6 +19,7 @@ def build_env_config(
     # Multi-Eve (HPPP) params
     use_multiple_eves: bool = True,
     eve_density_lambda: float = 2e-5,
+    eve_uncertainty_radius: float = 15.0,
 ) -> EnvConfig:
     return EnvConfig(
         seed=seed,
@@ -38,4 +39,5 @@ def build_env_config(
         ntn_rician_k_db=ntn_rician_k_db,
         use_multiple_eves=use_multiple_eves,
         eve_density_lambda=eve_density_lambda,
+        eve_uncertainty_radius=eve_uncertainty_radius,
     )

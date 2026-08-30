@@ -36,12 +36,14 @@ class Week9SystemModel:
         freq_hz: float = 2.4e9,          # Carrier frequency 2.4 GHz
         bandwidth_hz: float = 1e6,       # Bandwidth 1 MHz
         noise_power: float = 1e-10,      # Thermal noise (-70 dBm)
+        eve_uncertainty_radius: float = 15.0,  # Uncertainty radius in meters
     ):
         self.p_bs_tx = p_bs_tx
         self.p_jam_tx = p_jam_tx
         self.n_ris_elements = n_ris_elements
         self.bandwidth_hz = bandwidth_hz
         self.noise_power = noise_power
+        self.eve_uncertainty_radius = eve_uncertainty_radius
 
         # Modules
         self.path_loss_model = ElevationPathLossModel(freq_hz=freq_hz)
@@ -74,6 +76,20 @@ class Week9SystemModel:
         """
         g_bs_ris = self.path_loss_model.compute_channel_gain(pos_tx, pos_ris)
         g_ris_rx = self.path_loss_model.compute_channel_gain(pos_ris, pos_rx)
+        ris_array_gain = self.n_ris_elements ** 2
+        return float(g_bs_ris * g_ris_rx * ris_array_gain)
+
+    def compute_cascaded_gain_uncertain(
+        self, pos_tx: np.ndarray, pos_ris: np.ndarray, pos_rx: np.ndarray, delta_q: float
+    ) -> float:
+        """
+        Computes worst-case (maximized) cascaded channel gain through RIS: BS -> RIS -> RX
+        where RX is an eavesdropper at an uncertain location (delta_q).
+        """
+        g_bs_ris = self.path_loss_model.compute_channel_gain(pos_tx, pos_ris)
+        g_ris_rx = self.path_loss_model.compute_channel_gain_uncertain(
+            pos_ris, pos_rx, delta_q, maximize=True
+        )
         ris_array_gain = self.n_ris_elements ** 2
         return float(g_bs_ris * g_ris_rx * ris_array_gain)
 
@@ -129,8 +145,10 @@ class Week9SystemModel:
         sum_r_e_near = 0.0
         for e_name in ["E1", "E2", "E3"]:
             pos_e = self.nodes[e_name].position
-            g_cascaded_e = self.compute_cascaded_gain(pos_bs, pos_r, pos_e)
-            g_jam_e = self.path_loss_model.compute_channel_gain(pos_j, pos_e)
+            g_cascaded_e = self.compute_cascaded_gain_uncertain(pos_bs, pos_r, pos_e, self.eve_uncertainty_radius)
+            g_jam_e = self.path_loss_model.compute_channel_gain_uncertain(
+                pos_j, pos_e, self.eve_uncertainty_radius, maximize=False
+            )
             p_jam_e = self.p_jam_tx * g_jam_e
             
             # Eavesdropper tries to decode far user signal s_F (Mobile User U)
@@ -188,15 +206,18 @@ class Week9SystemModel:
 
         # 8. Monostatic Radar Sensing at UAV Jammer J
         g_jt = self.path_loss_model.compute_channel_gain(pos_j, pos_t)
-        snr_radar_t = (self.p_jam_tx * (g_jt ** 2)) / self.noise_power
+        radar_processing_gain = 1e7
+        snr_radar_t = (self.p_jam_tx * (g_jt ** 2) * radar_processing_gain) / self.noise_power
         sensing_acc_t = self.nodes["J"].compute_sensing_accuracy(snr_radar_t)
         crb_t = self.nodes["J"].compute_crb(snr_radar_t)
 
         sensing_e_results = {}
         for e_name in ["E1", "E2", "E3"]:
             pos_e = self.nodes[e_name].position
-            g_je = self.path_loss_model.compute_channel_gain(pos_j, pos_e)
-            snr_radar_e = (self.p_jam_tx * (g_je ** 2)) / self.noise_power
+            g_je = self.path_loss_model.compute_channel_gain_uncertain(
+                pos_j, pos_e, self.eve_uncertainty_radius, maximize=False
+            )
+            snr_radar_e = (self.p_jam_tx * (g_je ** 2) * radar_processing_gain) / self.noise_power
             acc_e = self.nodes["J"].compute_sensing_accuracy(snr_radar_e)
             crb_e = self.nodes["J"].compute_crb(snr_radar_e)
             sensing_e_results[e_name] = {

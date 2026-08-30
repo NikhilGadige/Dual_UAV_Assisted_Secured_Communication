@@ -139,3 +139,60 @@ class ElevationPathLossModel:
             fading_gain = h_real ** 2 + h_imag ** 2
 
         return float(pl_linear * fading_gain)
+
+    def compute_channel_gain_uncertain(
+        self,
+        pos_tx: np.ndarray,
+        pos_rx: np.ndarray,
+        delta_q: float,
+        maximize: bool = True,
+        fading_type: str = "rician",
+    ) -> float:
+        """
+        Computes linear channel power gain |h|^2 incorporating location uncertainty delta_q.
+        If maximize is True, the 2D distance is decreased by delta_q.
+        If maximize is False, the 2D distance is increased by delta_q.
+        """
+        pos_tx = np.asarray(pos_tx, dtype=float)
+        pos_rx = np.asarray(pos_rx, dtype=float)
+        
+        dx = pos_tx[0] - pos_rx[0]
+        dy = pos_tx[1] - pos_rx[1]
+        dz = abs(pos_tx[2] - pos_rx[2])
+        
+        d_2d = np.sqrt(dx * dx + dy * dy)
+        if maximize:
+            d_2d_mod = max(d_2d - delta_q, 0.0)
+        else:
+            d_2d_mod = d_2d + delta_q
+            
+        d_3d_mod = np.sqrt(d_2d_mod * d_2d_mod + dz * dz)
+        
+        if d_2d_mod < EPSILON:
+            theta_mod = 90.0 if dz > EPSILON else 0.0
+        else:
+            theta_mod = float(np.degrees(np.arctan2(dz, d_2d_mod)))
+            
+        p_los = self.los_probability(theta_mod)
+        fspl_db = self.free_space_path_loss_db(d_3d_mod)
+        
+        pl_los_db = fspl_db + self.eta_los_db
+        pl_nlos_db = fspl_db + self.eta_nlos_db
+        
+        pl_mean_db = p_los * pl_los_db + (1.0 - p_los) * pl_nlos_db
+        pl_linear = 10.0 ** (-pl_mean_db / 10.0)
+        
+        if fading_type == "rician":
+            k_factor_db = 3.0 + 0.15 * theta_mod
+            K = 10.0 ** (k_factor_db / 10.0)
+            s = np.sqrt(K / (K + 1.0))
+            sigma = np.sqrt(1.0 / (2.0 * (K + 1.0)))
+            h_real = s + np.random.normal(0.0, sigma)
+            h_imag = np.random.normal(0.0, sigma)
+            fading_gain = h_real ** 2 + h_imag ** 2
+        else:
+            h_real = np.random.normal(0.0, 1.0 / np.sqrt(2.0))
+            h_imag = np.random.normal(0.0, 1.0 / np.sqrt(2.0))
+            fading_gain = h_real ** 2 + h_imag ** 2
+            
+        return float(pl_linear * fading_gain)

@@ -4,8 +4,8 @@ Final System Model RL Convergence Analysis Script.
 Trains and compares:
 - MAPPO (Proposed Multi-Agent PPO)
 - MATD3PG (Multi-Agent Twin Delayed DDPG)
-- SAC (Single-Agent Soft Actor-Critic)
-- Single-Agent TD3PG (Single-Agent Twin Delayed DDPG)
+- SASAC (Single-Agent Soft Actor-Critic)
+- SATD3PG (Single-Agent Twin Delayed DDPG)
 - Random Walk (Baseline)
 on the Week 9 Semantic-Aware ISAC Network with PD-NOMA and Elevation-Dependent Path Loss.
 Logs metrics to CSV and plots convergence curves under output_final/.
@@ -32,6 +32,36 @@ from system_model import Week9SystemModel
 OUTPUT_DIR = "output_final"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+LAMBDA1_ASSR = 0.5
+LAMBDA2_PD = 0.5
+LAMBDA1_PD_SENSING = 0.5
+LAMBDA2_PD_SENSING = 0.5
+CRB_THRESHOLD = 1.0e8
+
+
+def robust_max_reference(values):
+    """Return the maximum secrecy value for stable ASSR scaling."""
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return 1.0
+    ref = float(np.max(arr))
+    return ref if ref > 1e-12 else 1.0
+
+
+def compute_assr_pd_utility(secrecy_vals, pd_target_vals, pd_eaves_vals, crb_target_vals):
+    secrecy_arr = np.asarray(secrecy_vals, dtype=float)
+    pd_target_arr = np.asarray(pd_target_vals, dtype=float)
+    pd_eaves_arr = np.asarray(pd_eaves_vals, dtype=float)
+    crb_target_arr = np.asarray(crb_target_vals, dtype=float)
+
+    r_ref = robust_max_reference(secrecy_arr)
+    assr_vals = np.clip(secrecy_arr / r_ref, 0.0, 1.0)
+    pd_combined_vals = LAMBDA1_PD_SENSING * pd_eaves_arr + LAMBDA2_PD_SENSING * pd_target_arr
+    crb_feasible_vals = (crb_target_arr <= CRB_THRESHOLD).astype(float)
+    utility_vals = (LAMBDA1_ASSR * assr_vals + LAMBDA2_PD * pd_combined_vals) * crb_feasible_vals
+    return assr_vals, pd_combined_vals, utility_vals, crb_feasible_vals, r_ref
+
 # Set seed for reproducibility
 def set_seed(seed=42):
     random.seed(seed)
@@ -42,13 +72,17 @@ def set_seed(seed=42):
 
 # --- 1. Custom Gymnasium-Style Environment for Week 9 System Model ---
 class Week9ISACEnv:
-    def __init__(self, seed=42):
+    def __init__(self, seed=42, eve_uncertainty_radius=15.0):
         self.sys_model = Week9SystemModel(
             p_bs_tx=2.0,
             p_jam_tx=0.5,
             n_ris_elements=64,
             noma_a_far=0.7,
+            eve_uncertainty_radius=eve_uncertainty_radius,
         )
+        self.eve_uncertainty_radius = eve_uncertainty_radius
+        self.lambda1_pd = LAMBDA1_PD_SENSING
+        self.lambda2_pd = LAMBDA2_PD_SENSING
         self.seed = seed
         self.rng = np.random.default_rng(seed)
         
@@ -89,6 +123,10 @@ class Week9ISACEnv:
         # Agent 2 (jammer_uav): dx, dy, dz for J
         # Agent 3 (power_alloc): p_bs_tx_act, p_jam_tx_act, noma_a_far_act
         self.action_dim = 9
+        self._objective_secrecy_history = []
+
+    def reset_objective_tracking(self):
+        self._objective_secrecy_history = []
         
     def reset(self):
         # Reset positions
@@ -110,6 +148,7 @@ class Week9ISACEnv:
         self.sys_model.p_bs_tx = self.p_bs_tx
         self.sys_model.p_jam_tx = self.p_jam_tx
         self.sys_model.noma_engine.power_alloc_far = self.noma_a_far
+        self.sys_model.eve_uncertainty_radius = self.eve_uncertainty_radius
         
         return self._get_obs()
         
@@ -181,71 +220,41 @@ class Week9ISACEnv:
         self.sys_model.p_bs_tx = self.p_bs_tx
         self.sys_model.p_jam_tx = self.p_jam_tx
         self.sys_model.noma_engine.power_alloc_far = self.noma_a_far
+        self.sys_model.eve_uncertainty_radius = self.eve_uncertainty_radius
         
         # Evaluate system performance
         results = self.sys_model.evaluate_system()
         
-        # Extract variables for reward calculation
+        # Extract variables for the shared objective
         secrecy_total = results["secrecy_performance"]["secrecy_rate_total"] # suts/s
         pd_target = results["sensing_performance"]["Target_T"]["sensing_accuracy"]
         pd_eaves = np.mean([eve["sensing_accuracy"] for eve in results["sensing_performance"]["Eavesdroppers"].values()])
-        pd_combined = 0.5 * pd_target + 0.5 * pd_eaves
-        
         crb_target = results["sensing_performance"]["Target_T"]["crb"]
-        
-        # Composite Reward
-        # Secrecy reward: scale secrecy rate in M-suts/s by 1000.0 to match the original reward range
-        r_secrecy = (secrecy_total / 1.0e6) * 1000.0
-        
-        # Sensing reward: use continuous SNR in dB
-        snr_radar_t = self.sys_model.p_jam_tx * (self.sys_model.path_loss_model.compute_channel_gain(self.pos_J, self.pos_T)**2) / self.sys_model.noise_power
-        snr_db = float(10.0 * np.log10(max(snr_radar_t, 1e-12)))
-        r_sensing = (snr_db + 80.0) / 10.0
-        r_sensing = max(0.0, r_sensing)
-        
-        # Guidance reward (SNR and JNR) to help the agent find the optimal secrecy state
-        g_bs_ris = self.sys_model.path_loss_model.compute_channel_gain(self.sys_model.nodes["BS"].position, self.pos_R)
-        g_ris_t = self.sys_model.path_loss_model.compute_channel_gain(self.pos_R, self.pos_T)
-        g_ris_u = self.sys_model.path_loss_model.compute_channel_gain(self.pos_R, self.pos_U)
-        
-        noma_a_near = 1.0 - self.noma_a_far
-        P_sig_t = self.p_bs_tx * noma_a_near * g_bs_ris * g_ris_t * (self.sys_model.n_ris_elements ** 2)
-        P_sig_u = self.p_bs_tx * self.noma_a_far * g_bs_ris * g_ris_u * (self.sys_model.n_ris_elements ** 2)
-        
-        snr_t_db = float(10.0 * np.log10(max(P_sig_t / self.sys_model.noise_power, 1e-12)))
-        snr_u_db = float(10.0 * np.log10(max(P_sig_u / self.sys_model.noise_power, 1e-12)))
-        
-        g_jt = self.sys_model.path_loss_model.compute_channel_gain(self.pos_J, self.pos_T)
-        jnr_t_linear = (self.p_jam_tx * g_jt) / self.sys_model.noise_power
-        jnr_t_db = float(10.0 * np.log10(1.0 + jnr_t_linear))
-        
-        r_guidance = 0.2 * (snr_t_db + snr_u_db) - 0.5 * jnr_t_db
-        
-        # Constraint Violations / Penalties
-        penalty_collision = 0.0
-        dist_R_J = np.linalg.norm(self.pos_R - self.pos_J)
-        if dist_R_J < 10.0:
-            penalty_collision = 0.5 * (10.0 - dist_R_J)
-            
-        # CRB penalty: smooth log penalty
-        penalty_crb = 0.0
-        if crb_target > 1.0e6:
-            penalty_crb = 0.1 * (np.log10(crb_target) - 6.0)
-            
-        reward = r_secrecy + r_sensing + r_guidance - penalty_collision - penalty_crb
-        
-        # Constraint satisfaction checks (with realistic thresholds)
-        crb_satisfied = crb_target <= 1.0e8
+
+        self._objective_secrecy_history.append(float(secrecy_total))
+        secrecy_ref = robust_max_reference(self._objective_secrecy_history)
+        assr = float(np.clip(secrecy_total / secrecy_ref, 0.0, 1.0))
+        pd_combined = float(self.lambda1_pd * pd_eaves + self.lambda2_pd * pd_target)
+
+        # Shared objective for every algorithm:
+        # reward = (0.5 * ASSR + 0.5 * Pd) with CRB as a feasibility constraint.
+        crb_satisfied = crb_target <= CRB_THRESHOLD
+        reward = float((LAMBDA1_ASSR * assr + LAMBDA2_PD * pd_combined) * float(crb_satisfied))
+
         pd_satisfied = pd_target >= 0.0 and all(eve["sensing_accuracy"] >= 0.0 for eve in results["sensing_performance"]["Eavesdroppers"].values())
         joint_satisfied = crb_satisfied and pd_satisfied
         
         info = {
+            "reward": reward,
+            "assr": assr,
+            "pd_combined": pd_combined,
             "secrecy_total": secrecy_total,
             "secrecy_target": results["secrecy_performance"]["secrecy_rate_target"],
             "secrecy_user": results["secrecy_performance"]["secrecy_rate_user"],
             "pd_target": pd_target,
             "pd_eaves": pd_eaves,
             "crb_target": crb_target,
+            "crb_feasible": float(crb_satisfied),
             "p_bs_tx": self.p_bs_tx,
             "p_jam_tx": self.p_jam_tx,
             "noma_a_far": self.noma_a_far,
@@ -357,23 +366,40 @@ class ValueNetwork(nn.Module):
 # Helper to save metrics history
 def save_history_to_csv(history, filename):
     filepath = os.path.join(OUTPUT_DIR, filename)
+    secrecy_vals = [row[2] for row in history]
+    pd_target_vals = [row[5] for row in history]
+    pd_eaves_vals = [row[6] for row in history]
+    crb_target_vals = [row[7] for row in history]
+    assr_vals, pd_combined_vals, utility_vals, crb_feasible_vals, _ = compute_assr_pd_utility(
+        secrecy_vals, pd_target_vals, pd_eaves_vals, crb_target_vals,
+    )
     with open(filepath, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow([
             "episode", "reward", "secrecy_total", "secrecy_target", "secrecy_user",
             "pd_target", "pd_eaves", "crb_target", "p_bs_tx", "p_jam_tx",
-            "noma_a_far", "constraint_satisfaction"
+            "noma_a_far", "constraint_satisfaction", "assr", "pd_combined",
+            "combined_utility", "crb_feasible"
         ])
-        for row in history:
-            writer.writerow(row)
+        for idx, row in enumerate(history):
+            writer.writerow(list(row) + [
+                float(assr_vals[idx]),
+                float(pd_combined_vals[idx]),
+                float(utility_vals[idx]),
+                float(crb_feasible_vals[idx]),
+            ])
     print(f"Saved convergence history to {filepath}")
 
 # Helper to generate individual algorithm convergence plots
 def plot_individual_convergence(history, algo_name):
     episodes = [row[0] for row in history]
-    rewards = [row[1] for row in history]
-    secrecy = [row[2] / 1e6 for row in history]  # in M-suts/s
-    pd_target = [row[5] for row in history]
+    secrecy_vals = [row[2] for row in history]
+    pd_target_vals = [row[5] for row in history]
+    pd_eaves_vals = [row[6] for row in history]
+    crb_target_vals = [row[7] for row in history]
+    assr_vals, pd_combined_vals, utility_vals, _, _ = compute_assr_pd_utility(
+        secrecy_vals, pd_target_vals, pd_eaves_vals, crb_target_vals,
+    )
     
     # Calculate rolling 100 average
     def rolling_average(data, window=100):
@@ -383,31 +409,34 @@ def plot_individual_convergence(history, algo_name):
             res.append(np.mean(data[start:i+1]))
         return res
         
-    rewards_roll = rolling_average(rewards, 100)
-    secrecy_roll = rolling_average(secrecy, 100)
-    pd_target_roll = rolling_average(pd_target, 100)
+    assr_roll = rolling_average(assr_vals, 100)
+    pd_roll = rolling_average(pd_combined_vals, 100)
+    utility_roll = rolling_average(utility_vals, 100)
     
     fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
     
-    # Reward plot
-    axs[0].plot(episodes, rewards, color='blue', alpha=0.3, label='Episodic Reward')
-    axs[0].plot(episodes, rewards_roll, color='blue', linestyle='--', linewidth=2, label='Rolling 100 Reward')
-    axs[0].set_ylabel('Reward')
+    # ASSR plot
+    axs[0].plot(episodes, assr_vals, color='green', alpha=0.3, label='Episodic ASSR')
+    axs[0].plot(episodes, assr_roll, color='green', linestyle='--', linewidth=2, label='Rolling 100 ASSR')
+    axs[0].set_ylabel('ASSR')
+    axs[0].set_ylim(-0.05, 1.05)
     axs[0].grid(True)
     axs[0].legend()
-    axs[0].set_title(f'{algo_name} Training Convergence Curves')
+    axs[0].set_title(f'{algo_name} Objective Convergence Curves')
     
-    # Secrecy Rate plot
-    axs[1].plot(episodes, secrecy, color='green', alpha=0.3, label='Episodic Secrecy Rate')
-    axs[1].plot(episodes, secrecy_roll, color='green', linestyle='--', linewidth=2, label='Rolling 100 Secrecy Rate')
-    axs[1].set_ylabel('Secrecy Rate (M-suts/s)')
+    # Pd plot
+    axs[1].plot(episodes, pd_combined_vals, color='red', alpha=0.3, label='Episodic Pd')
+    axs[1].plot(episodes, pd_roll, color='red', linestyle='--', linewidth=2, label='Rolling 100 Pd')
+    axs[1].set_ylabel('Pd')
+    axs[1].set_ylim(-0.05, 1.05)
     axs[1].grid(True)
     axs[1].legend()
     
-    # Sensing Accuracy plot
-    axs[2].plot(episodes, pd_target, color='red', alpha=0.3, label='Episodic Sensing Acc')
-    axs[2].plot(episodes, pd_target_roll, color='red', linestyle='--', linewidth=2, label='Rolling 100 Sensing Acc')
-    axs[2].set_ylabel('Sensing Accuracy')
+    # Combined utility plot
+    axs[2].plot(episodes, utility_vals, color='purple', alpha=0.3, label='Episodic 0.5*ASSR + 0.5*Pd')
+    axs[2].plot(episodes, utility_roll, color='purple', linestyle='--', linewidth=2, label='Rolling 100 Combined')
+    axs[2].set_ylabel('Combined Utility')
+    axs[2].set_ylim(-0.05, 1.05)
     axs[2].set_xlabel('Episode')
     axs[2].grid(True)
     axs[2].legend()
@@ -418,24 +447,25 @@ def plot_individual_convergence(history, algo_name):
     plt.close()
     print(f"Saved convergence plot to {plot_path}")
 
-    # Dedicated Secrecy Rate vs Episodes Plot
+    # Dedicated combined utility plot
     plt.figure(figsize=(10, 6))
-    plt.plot(episodes, secrecy, color='green', alpha=0.3, label='Episodic Secrecy Rate')
-    plt.plot(episodes, secrecy_roll, color='green', linewidth=2, label='Rolling 100 Secrecy Rate')
-    plt.title(f'{algo_name} Secrecy Rate Convergence')
+    plt.plot(episodes, utility_vals, color='purple', alpha=0.3, label='Episodic 0.5*ASSR + 0.5*Pd')
+    plt.plot(episodes, utility_roll, color='purple', linewidth=2, label='Rolling 100 Combined Utility')
+    plt.title(f'{algo_name} Combined Utility Convergence')
     plt.xlabel('Episode')
-    plt.ylabel('Secrecy Rate (M-suts/s)')
+    plt.ylabel(r'Utility (($0.5$ ASSR $+\ 0.5$ Pd) $\times$ CRB-feasible)')
     plt.grid(True)
     plt.legend()
     
-    secrecy_plot_path = os.path.join(OUTPUT_DIR, f"{algo_name.lower().replace(' ', '_')}_secrecy_convergence.png")
-    plt.savefig(secrecy_plot_path, dpi=150)
+    utility_plot_path = os.path.join(OUTPUT_DIR, f"{algo_name.lower().replace(' ', '_')}_utility_convergence.png")
+    plt.savefig(utility_plot_path, dpi=150)
     plt.close()
-    print(f"Saved secrecy convergence plot to {secrecy_plot_path}")
+    print(f"Saved utility convergence plot to {utility_plot_path}")
 
 # (A) Random Walk Baseline
 def run_random_walk(env, num_episodes=150, steps_per_episode=50):
     print("\n--- Running Random Walk Baseline ---")
+    env.reset_objective_tracking()
     history = []
     
     for ep in range(num_episodes):
@@ -473,9 +503,10 @@ def run_random_walk(env, num_episodes=150, steps_per_episode=50):
     plot_individual_convergence(history, "Random Walk")
     return history
 
-# (B) Single-Agent TD3PG
-def train_td3pg_single(env, num_episodes=150, steps_per_episode=50):
-    print("\n--- Training Single-Agent TD3PG ---")
+# (B) SATD3PG
+def train_satd3pg(env, num_episodes=150, steps_per_episode=50):
+    print("\n--- Training SATD3PG ---")
+    env.reset_objective_tracking()
     history = []
     
     # Hyperparameters
@@ -597,13 +628,14 @@ def train_td3pg_single(env, num_episodes=150, steps_per_episode=50):
                   f"Secrecy Rate: {avg_row[2]/1e6:.6f} M-suts/s (Rolling100: {roll_secrecy/1e6:.6f} M-suts/s) "
                   f"({avg_row[2]:.2f} suts/s (Rolling100: {roll_secrecy:.2f} suts/s))")
             
-    save_history_to_csv(history, "td3pg_single_history.csv")
-    plot_individual_convergence(history, "Single Agent TD3PG")
+    save_history_to_csv(history, "satd3pg_history.csv")
+    plot_individual_convergence(history, "SATD3PG")
     return history
 
-# (C) Single-Agent SAC
-def train_sac(env, num_episodes=150, steps_per_episode=50):
-    print("\n--- Training Single-Agent SAC ---")
+# (C) SASAC
+def train_sasac(env, num_episodes=150, steps_per_episode=50):
+    print("\n--- Training SASAC ---")
+    env.reset_objective_tracking()
     history = []
     
     # Hyperparameters
@@ -710,13 +742,14 @@ def train_sac(env, num_episodes=150, steps_per_episode=50):
                   f"Secrecy Rate: {avg_row[2]/1e6:.6f} M-suts/s (Rolling100: {roll_secrecy/1e6:.6f} M-suts/s) "
                   f"({avg_row[2]:.2f} suts/s (Rolling100: {roll_secrecy:.2f} suts/s))")
             
-    save_history_to_csv(history, "sac_history.csv")
-    plot_individual_convergence(history, "SAC")
+    save_history_to_csv(history, "sasac_history.csv")
+    plot_individual_convergence(history, "SASAC")
     return history
 
 # (D) MATD3PG (Multi-Agent Twin Delayed DDPG)
 def train_matd3pg(env, num_episodes=150, steps_per_episode=50):
     print("\n--- Training MATD3PG (Proposed Baseline) ---")
+    env.reset_objective_tracking()
     history = []
     
     # 3 agents: ris_uav (3-dim action), jammer_uav (3-dim action), power_alloc (3-dim action)
@@ -882,7 +915,7 @@ def train_mappo(env, num_episodes=150, steps_per_episode=50, episodes_per_update
     episode's 50-step on-policy rollout, with no gradient clipping and no
     entropy bonus. That produced very high-variance policy updates (visible
     as large oscillations in the rolling-average utility, unlike the
-    off-policy, replay-buffer-based SAC/MATD3PG baselines which update
+    off-policy, replay-buffer-based SASAC/MATD3PG baselines which update
     every step from a large, diverse buffer). This version accumulates
     `episodes_per_update` episodes into a larger on-policy rollout before
     each PPO update (reduces gradient variance), clips gradients to
@@ -891,6 +924,7 @@ def train_mappo(env, num_episodes=150, steps_per_episode=50, episodes_per_update
     standard PPO stabilization practice for small on-policy batch sizes.
     """
     print("\n--- Training MAPPO (Proposed Algorithm) ---")
+    env.reset_objective_tracking()
     history = []
 
     agent_dims = [3, 3, 3]
@@ -1099,113 +1133,94 @@ def generate_comparison_plots(mappo_hist, matd3pg_hist, sac_hist, td3pg_hist, rw
     hists = {
         'MAPPO (Proposed)': ('purple', mappo_hist),
         'MATD3PG': ('blue', matd3pg_hist),
-        'SAC': ('green', sac_hist),
-        'Single Agent TD3PG': ('orange', td3pg_hist),
+        'SASAC': ('green', sac_hist),
+        'SATD3PG': ('orange', td3pg_hist),
         'Random Walk': ('grey', rw_hist)
     }
     
-    # 1. Cumulative Reward Plot
+    # Compute a global secrecy normalization reference across all algorithms to ensure fair comparison
+    all_secrecy_vals = []
+    for name, (color, hist) in hists.items():
+        all_secrecy_vals.extend([r[2] for r in hist])
+    global_r_ref = robust_max_reference(all_secrecy_vals)
+    
+    # 1. ASSR comparison plot
     plt.figure(figsize=(10, 6))
     for name, (color, hist) in hists.items():
-        raw_vals = [r[1] for r in hist]
-        roll_vals = rolling_average(raw_vals, 100)
+        secrecy_vals = np.asarray([r[2] for r in hist], dtype=float)
+        assr_vals = np.clip(secrecy_vals / global_r_ref, 0.0, 1.0)
+        roll_vals = rolling_average(assr_vals, 100)
         linestyle = '--' if name == 'Random Walk' else '-'
-        # Plot raw faded line
-        plt.plot(episodes, raw_vals, color=color, alpha=0.15, linestyle=linestyle)
-        # Plot bold rolling average line
+        plt.plot(episodes, assr_vals, color=color, alpha=0.15, linestyle=linestyle)
         plt.plot(episodes, roll_vals, label=name, color=color, linewidth=2, linestyle=linestyle)
         
-    plt.title('Convergence Comparison (Cumulative Reward - Rolling 100)')
+    plt.title('ASSR Convergence Comparison (Rolling 100)')
     plt.xlabel('Episode')
-    plt.ylabel('Episode Reward')
+    plt.ylabel('ASSR')
+    plt.ylim(-0.05, 1.05)
     plt.grid(True)
     plt.legend()
     
-    comparison_reward_path = os.path.join(OUTPUT_DIR, "convergence_comparison.png")
-    plt.savefig(comparison_reward_path, dpi=150)
+    comparison_assr_path = os.path.join(OUTPUT_DIR, "assr_comparison.png")
+    plt.savefig(comparison_assr_path, dpi=150)
     plt.close()
     
-    # 2. Secrecy Rate Comparison Plot
+    # 2. Combined Pd comparison plot
     plt.figure(figsize=(10, 6))
     for name, (color, hist) in hists.items():
-        raw_vals = [r[2]/1e6 for r in hist]
-        roll_vals = rolling_average(raw_vals, 100)
+        pd_target_vals = np.asarray([r[5] for r in hist], dtype=float)
+        pd_eaves_vals = np.asarray([r[6] for r in hist], dtype=float)
+        pd_combined_vals = LAMBDA1_PD_SENSING * pd_eaves_vals + LAMBDA2_PD_SENSING * pd_target_vals
+        roll_vals = rolling_average(pd_combined_vals, 100)
         linestyle = '--' if name == 'Random Walk' else '-'
-        plt.plot(episodes, raw_vals, color=color, alpha=0.15, linestyle=linestyle)
+        plt.plot(episodes, pd_combined_vals, color=color, alpha=0.15, linestyle=linestyle)
         plt.plot(episodes, roll_vals, label=name, color=color, linewidth=2, linestyle=linestyle)
         
-    plt.title('Average Secrecy Rate Convergence Comparison (Rolling 100)')
+    plt.title('Pd Convergence Comparison (Rolling 100)')
     plt.xlabel('Episode')
-    plt.ylabel('Secrecy Rate (M-suts/s)')
+    plt.ylabel('Pd')
+    plt.ylim(-0.05, 1.05)
     plt.grid(True)
     plt.legend()
     
-    comparison_secrecy_path = os.path.join(OUTPUT_DIR, "secrecy_rate_comparison.png")
-    plt.savefig(comparison_secrecy_path, dpi=150)
+    comparison_pd_path = os.path.join(OUTPUT_DIR, "pd_comparison.png")
+    plt.savefig(comparison_pd_path, dpi=150)
     plt.close()
     
-    # 3. Target Sensing Accuracy Comparison Plot
+    # 3. Combined utility comparison plot
     plt.figure(figsize=(10, 6))
     for name, (color, hist) in hists.items():
-        raw_vals = [r[5] for r in hist]
-        roll_vals = rolling_average(raw_vals, 100)
+        secrecy_vals = np.asarray([r[2] for r in hist], dtype=float)
+        pd_target_vals = np.asarray([r[5] for r in hist], dtype=float)
+        pd_eaves_vals = np.asarray([r[6] for r in hist], dtype=float)
+        crb_target_vals = np.asarray([r[7] for r in hist], dtype=float)
+        
+        assr_vals = np.clip(secrecy_vals / global_r_ref, 0.0, 1.0)
+        pd_combined_vals = LAMBDA1_PD_SENSING * pd_eaves_vals + LAMBDA2_PD_SENSING * pd_target_vals
+        crb_feasible_vals = (crb_target_vals <= CRB_THRESHOLD).astype(float)
+        
+        utility_vals = (LAMBDA1_ASSR * assr_vals + LAMBDA2_PD * pd_combined_vals) * crb_feasible_vals
+        roll_vals = rolling_average(utility_vals, 100)
+        
         linestyle = '--' if name == 'Random Walk' else '-'
-        plt.plot(episodes, raw_vals, color=color, alpha=0.15, linestyle=linestyle)
+        plt.plot(episodes, utility_vals, color=color, alpha=0.15, linestyle=linestyle)
         plt.plot(episodes, roll_vals, label=name, color=color, linewidth=2, linestyle=linestyle)
         
-    plt.title('Average Target Sensing Accuracy Convergence Comparison (Rolling 100)')
+    plt.title('Combined Utility Convergence Comparison (Rolling 100)')
     plt.xlabel('Episode')
-    plt.ylabel('Sensing Accuracy')
+    plt.ylabel(r'Utility (($0.5$ ASSR $+\ 0.5$ Pd) $\times$ CRB-feasible)')
+    plt.ylim(-0.05, 1.05)
     plt.grid(True)
     plt.legend()
     
-    comparison_sensing_path = os.path.join(OUTPUT_DIR, "sensing_accuracy_comparison.png")
-    plt.savefig(comparison_sensing_path, dpi=150)
-    plt.close()
-    
-    # 4. Multi-Objective Utility Comparison (excluding Random Walk): this is
-    # the figure referenced by report_week9.tex (Problem Formulation /
-    # Convergence Analysis). Per episode e, secrecy is normalized by the
-    # maximum secrecy achieved anywhere in that algorithm's run (ASSR), then
-    # combined with the detection probability P_d, matching the joint
-    # secrecy/sensing optimization objective U^(e) = lambda1*ASSR^(e) + lambda2*P_d^(e):
-    #   ASSR^(e) = R_sec_total^(e) / max_j R_sec_total^(j)
-    #   P_d^(e)  = w3 * pd_eaves^(e) + w4 * pd_target^(e)
-    #   U^(e)    = lambda1 * ASSR^(e) + lambda2 * P_d^(e)
-    LAMBDA1_ASSR, LAMBDA2_PD = 0.5, 0.5
-    W3_PD_EAVES, W4_PD_TARGET = 0.5, 0.5
-
-    plt.figure(figsize=(10, 6))
-    for name, (color, hist) in hists.items():
-        if name == 'Random Walk':
-            continue
-        secrecy_vals = np.array([r[2] for r in hist], dtype=float)
-        pd_target_vals = np.array([r[5] for r in hist], dtype=float)
-        pd_eaves_vals = np.array([r[6] for r in hist], dtype=float)
-
-        r_max = secrecy_vals.max() if secrecy_vals.max() > 1e-12 else 1.0
-        assr_vals = secrecy_vals / r_max
-        pd_combined_vals = W3_PD_EAVES * pd_eaves_vals + W4_PD_TARGET * pd_target_vals
-        utility_vals = LAMBDA1_ASSR * assr_vals + LAMBDA2_PD * pd_combined_vals
-
-        roll_vals = rolling_average(list(utility_vals), 100)
-        plt.plot(episodes, roll_vals, label=name, color=color, linewidth=2)
-
-    plt.title('Multi-Objective Utility Convergence Comparison (Rolling 100 Average)')
-    plt.xlabel('Episode')
-    plt.ylabel(r'Rolling Average Utility ($\lambda_1$ ASSR $+\ \lambda_2\ P_d$)')
-    plt.grid(True)
-    plt.legend()
-
-    comparison_rolling_secrecy_path = os.path.join(OUTPUT_DIR, "rolling_secrecy_comparison.png")
-    plt.savefig(comparison_rolling_secrecy_path, dpi=150)
+    comparison_utility_path = os.path.join(OUTPUT_DIR, "convergence_comparison.png")
+    plt.savefig(comparison_utility_path, dpi=150)
     plt.close()
     
     print("Comparison plots saved to:")
-    print(f"  - {comparison_reward_path}")
-    print(f"  - {comparison_secrecy_path}")
-    print(f"  - {comparison_sensing_path}")
-    print(f"  - {comparison_rolling_secrecy_path}")
+    print(f"  - {comparison_assr_path}")
+    print(f"  - {comparison_pd_path}")
+    print(f"  - {comparison_utility_path}")
 
 # --- 6. Main Runner Function ---
 def main():
@@ -1213,7 +1228,13 @@ def main():
     parser = argparse.ArgumentParser(description="Run RL Convergence Study on Week 9 System Model")
     parser.add_argument("--episodes", type=int, default=150, help="Number of training episodes")
     parser.add_argument("--steps", type=int, default=50, help="Number of steps per episode")
+    parser.add_argument("--lambda1", type=float, default=0.5, help="Weight for eavesdropper detection probability in Pd")
+    parser.add_argument("--lambda2", type=float, default=0.5, help="Weight for target detection probability in Pd")
     args = parser.parse_args()
+
+    global LAMBDA1_PD_SENSING, LAMBDA2_PD_SENSING
+    LAMBDA1_PD_SENSING = args.lambda1
+    LAMBDA2_PD_SENSING = args.lambda2
 
     set_seed(42)
     env = Week9ISACEnv(seed=42)
@@ -1229,11 +1250,11 @@ def main():
     # Run Random Walk
     rw_hist = run_random_walk(env, num_episodes=episodes, steps_per_episode=steps)
     
-    # Train Single-Agent TD3PG
-    td3_hist = train_td3pg_single(env, num_episodes=episodes, steps_per_episode=steps)
+    # Train SATD3PG
+    td3_hist = train_satd3pg(env, num_episodes=episodes, steps_per_episode=steps)
     
-    # Train Single-Agent SAC
-    sac_hist = train_sac(env, num_episodes=episodes, steps_per_episode=steps)
+    # Train SASAC
+    sac_hist = train_sasac(env, num_episodes=episodes, steps_per_episode=steps)
     
     # Train MATD3PG
     matd3pg_hist = train_matd3pg(env, num_episodes=episodes, steps_per_episode=steps)

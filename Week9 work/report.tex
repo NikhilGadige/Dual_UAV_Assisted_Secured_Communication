@@ -5,8 +5,8 @@
 
 % * GRAPHICS RELATED PACKAGES *
 \usepackage{graphicx}
-\graphicspath{{./}}
-\DeclareGraphicsExtensions{.pdf,.jpeg,.png}
+\graphicspath{{./}{../}}
+\DeclareGraphicsExtensions{.pdf,.jpeg,.jpg,.png}
 
 % * MATH PACKAGES *
 \usepackage{amsmath}
@@ -68,11 +68,10 @@ This report outlines the implementation details and mathematical models complete
     \item \textbf{Semantic Performance Metrics}: Characterizing semantic similarity, semantic rate, and semantic distortion for downlink, uplink, V2X, and eavesdropper channels -- each governed by the semantic compression ratio between semantic concepts and transmitted channel symbols -- as well as semantic sensing accuracy at the radar receiver.
 \end{enumerate}
 
-No simulation plots are provided in this weekly report, as the focus is solely on the mathematical model definition and software implementation architecture.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{system-model.png}
+    \includegraphics[width=\textwidth]{system-model.jpeg}
     \caption{System model of the proposed semantic-aware RIS-assisted UAV ISAC network. The Base Station (BS) communicates with the Target ($T$) and Mobile User ($U$) through an RIS-mounted UAV ($R$) using beamforming and PD-NOMA. A UAV Jammer ($J$) transmits jamming signals while performing monostatic sensing, whereas multiple eavesdroppers ($E_1$, $E_2$, and $E_3$) attempt to intercept the downlink transmissions. Semantic encoders and decoders are employed at the communicating nodes.}
     \label{fig:system_model}
 \end{figure}
@@ -92,15 +91,22 @@ We consider an aerial-terrestrial co-existing network operating in a bounded 3D 
 
 Before detailing the individual link models, we first outline the end-to-end semantic communication pipeline that underlies every transmission in the network, from the Base Station downlink to the Target's uplink and V2X links. A semantic message originating at a \emph{semantic source} (e.g., a sentence, a sensor reading, or a control instruction) is first mapped by a \emph{semantic encoder}, implemented as a joint source-channel coding (JSCC) neural network, into a sequence of $M$ semantic concepts. These concepts are subsequently represented by $K$ transmitted channel symbols, where $K$ is generally much smaller than the number of bits required for a conventional, meaning-agnostic bit-level representation of the same message. The resulting semantic symbol stream is transmitted over the elevation-dependent wireless channel described in Section III-A, which introduces path loss, small-scale fading, jamming interference, and, where applicable, eavesdropping. At the legitimate receiver, a matched \emph{semantic decoder} maps the received (and possibly noisy) symbols back into an estimate of the original meaning. Formally, this pipeline can be summarized as
 \[
-\text{Semantic Source} \;\rightarrow\; \text{Semantic Encoder (JSCC)} \;\rightarrow\; \text{Semantic Symbols} \;\rightarrow\; \text{Wireless Channel} \;\rightarrow\; \text{Semantic Decoder} \;\rightarrow\; \text{Recovered Meaning}.
+\begin{aligned}
+\text{Semantic Source}
+&\rightarrow \text{Semantic Encoder (JSCC)}
+\rightarrow \text{Semantic Symbols} \\
+&\rightarrow \text{Wireless Channel}
+\rightarrow \text{Semantic Decoder}
+\rightarrow \text{Recovered Meaning}
+\end{aligned}
 \]
 The ratio $M/K$, referred to as the \emph{semantic compression ratio}, governs the trade-off between transmission efficiency and semantic fidelity: a larger $M/K$ conveys more semantic concepts per transmitted symbol (higher efficiency) but places greater reconstruction burden on the semantic decoder under a given channel quality, generally increasing susceptibility to semantic distortion; a smaller $M/K$ trades efficiency for robustness. This compression ratio directly scales the semantic rate expression introduced in Section III-C and is treated identically across all downlink, uplink, V2X, and eavesdropper links considered in this report.
 
-To make this efficiency-reliability trade-off explicit at the physical layer rather than leaving it as a purely descriptive statement, every received SINR that feeds a semantic decoder in this report (Sections III-B, III-D, and III-F) is defined as a \emph{semantic-effective SINR} (represented by the symbol $\gamma$): the conventional link-budget SINR (transmit power scaled by channel gain, divided by jamming interference plus noise) is additionally scaled by the inverse compression ratio $K/M$. Formally, for any link with conventional link-budget ratio $\Gamma$ (i.e., the power-domain signal-to-interference-plus-noise ratio computed from transmit power, channel gain, jamming power, and $\sigma^2$ in the usual manner),
+To formulate the system metrics, every received SINR that feeds a semantic decoder in this report (Sections III-B, III-D, and III-F) is represented by the symbol $\gamma$, which corresponds directly to the conventional physical link-budget SINR (transmit power scaled by channel gain, divided by jamming interference plus noise). Formally, for any link, the signal-to-interference-plus-noise ratio is:
 \begin{equation}
-    \gamma = \left( \frac{K}{M} \right) \cdot \Gamma,
+    \gamma = \Gamma,
 \end{equation}
-where $K/M \le 1$ under net compression ($M \ge K$). The rationale is that when $M$ semantic concepts share the protection of only $K$ transmitted channel symbols, the effective reliability apportioned to each individual concept is diluted in proportion to the number of symbols available per concept: aggressive compression ($M/K$ large) reduces the semantic-effective SINR $\gamma$ relative to the raw link-budget ratio $\Gamma$, even though the physical channel and transmit power are unchanged, whereas conservative compression ($M/K \to 1$) recovers the conventional SINR. This definition is applied consistently to every SINR expression in the remainder of the report; the underlying link-budget ratio $\Gamma$ for each specific link is given explicitly in the corresponding subsection.
+where $\Gamma$ is the power-domain signal-to-interference-plus-noise ratio computed from transmit power, channel gain, jamming power, and $\sigma^2$ in the usual manner. This definition is applied consistently to every SINR expression in the remainder of the report, while the efficiency-reliability trade-off from compression is captured through the semantic rate conversion factor $M/K$ in Section III-C.
 
 \subsection{Elevation-Dependent Air-to-Ground Path Loss and Channel Model}
 For any propagation link $ij$ between a transmitter $i$ at position $\mathbf{p}_i = [x_i, y_i, z_i]^T$ and a receiver $j$ at $\mathbf{p}_j = [x_j, y_j, z_j]^T$ (with $ij \in \{BR, RT\}$ denoting the links from BS $B$ to RIS $R$ and RIS $R$ to Target $T$, respectively), the 3D Euclidean distance is:
@@ -180,18 +186,18 @@ The UAV Jammer $J$ emits artificial noise with power $P_J$, resulting in receive
 where $g_{J, k}$ is the elevation-dependent channel gain from the Jammer $J$ to receiver $k$. Note that for the Target $T$, the jamming interference is specifically denoted as $P_{J, T}$ (replacing the symbol $I_{\text{Jam}, \text{Veh}}$).
 
 \subsubsection{Distant (Far) User Semantic Decoding}
-The Far User (Mobile User $U$) applies its semantic decoder directly to the superposed received signal to recover $s_F$, treating the near user's semantic symbols $s_N$ as interference rather than attempting to separate them. Because $U$ operates at a lower effective channel gain, it is allocated the larger power fraction $a_F$ so that its semantic symbols remain decodable at the required fidelity. The conventional link-budget ratio at the Far User is $\Gamma_F = \dfrac{a_F P_B g_U}{a_N P_B g_U + P_{J, U} + \sigma^2}$, where $P_{J, U} = P_J g_{J, U}$ is the jamming power received at Mobile User $U$, and $\sigma^2$ is the background thermal noise power. Applying the semantic-effective scaling introduced above, the semantic SINR at the Far User is:
+The SINR at the Far User is:
 \begin{equation}
-    \gamma_F = \left( \frac{K}{M} \right) \cdot \frac{a_F P_B g_U}{a_N P_B g_U + P_{J, U} + \sigma^2},
+    \gamma_F = \frac{a_F P_B g_U}{a_N P_B g_U + P_{J, U} + \sigma^2},
 \end{equation}
-so that a more aggressive compression ratio ($M/K$ large) directly lowers $\gamma_F$ even under otherwise identical power, channel, and jamming conditions. This semantic SINR is passed directly through the semantic decoder's operating characteristic: the Mobile User evaluates the recovered meaning using its semantic similarity score $S_U(\gamma_F)$ and semantic rate $R_{\text{sem}, U}$ as detailed in Section III-C, rather than a conventional bit-error-rate criterion.
+where $P_{J, U} = P_J g_{J, U}$ is the jamming power received at Mobile User $U$, and $\sigma^2$ is the background thermal noise power. This SINR is passed directly through the semantic decoder's operating characteristic: the Mobile User evaluates the recovered meaning using its semantic similarity score $S_U(\gamma_F)$ and semantic rate $R_{\text{sem}, U}$ as detailed in Section III-C, rather than a conventional bit-error-rate criterion.
 
 \subsubsection{Near User Semantic-Aware SIC Decoding}
-The Near User (Target $T$) employs Successive Interference Cancellation (SIC) at the level of \emph{semantic representations} rather than raw bit streams. Concretely, $T$ first uses its own copy of the far-user semantic decoder to reconstruct an estimate of the far user's semantic information $\hat{s}_F$ from the superposed signal; this reconstructed semantic component is then subtracted from the received signal before $T$ applies its own semantic decoder to recover $s_N$. Because the far user's semantic contribution is removed prior to decoding, $s_F$ (or its residual) does not act as interference once cancellation is complete. The conventional link-budget ratio at the Target after cancellation is $\Gamma_N = \dfrac{a_N P_B g_T}{P_{J, T} + \sigma^2}$, where the denominator contains only the received Jammer interference $P_{J, T}$ and the background noise variance $\sigma^2$. Applying the same semantic-effective scaling, the received SINR at the Target $T$ for decoding its own signal $s_N$ simplifies to:
+The received SINR at the Target $T$ for decoding its own signal $s_N$ simplifies to:
 \begin{equation}
-    \gamma_N = \left( \frac{K}{M} \right) \cdot \frac{a_N P_B g_T}{P_{J, T} + \sigma^2}.
+    \gamma_N = \frac{a_N P_B g_T}{P_{J, T} + \sigma^2},
 \end{equation}
-Note that, since cancellation is performed on the semantic representation rather than on individual bits, any residual imperfection in reconstructing $\hat{s}_F$ manifests as semantic distortion rather than a conventional bit error, and is implicitly captured through the semantic similarity function of Section III-C when evaluated at $\gamma_F$; the $K/M$ scaling in $\gamma_N$ additionally ensures that the same compression ratio governing the far-user reconstruction also degrades the effective reliability of the near user's own SIC-decoded symbol, since both users' semantic streams are carried by the same $K$-symbol codeword. Under semantic communications, $\gamma_N$ is directly used to evaluate the semantic similarity score $S_T(\gamma_N)$ and the resulting semantic rate $R_{\text{sem}, T}$ as detailed in Section III-C.
+where the denominator contains only the received Jammer interference $P_{J, T}$ and the background noise variance $\sigma^2$. Note that, since cancellation is performed on the semantic representation rather than on individual bits, any residual imperfection in reconstructing $\hat{s}_F$ manifests as semantic distortion rather than a conventional bit error, and is implicitly captured through the semantic similarity function of Section III-C. Under semantic communications, $\gamma_N$ is directly used to evaluate the semantic similarity score $S_T(\gamma_N)$ and the resulting semantic rate $R_{\text{sem}, T}$ as detailed in Section III-C.
 
 \subsection{Semantic Communication Metrics}
 For a semantic link, the receiver evaluates the performance using semantic-specific variables rather than bit error rates. The three metrics below -- semantic similarity, semantic rate, and semantic distortion -- are evaluated identically for every link in the network (downlink near- and far-user links, uplink V2I, V2X, and eavesdropper links) by substituting the corresponding link SINR $\gamma$, so that a single consistent semantic performance model applies throughout the report.
@@ -217,21 +223,21 @@ The average loss of semantic meaning due to channel impairments is quantified as
 \begin{equation}
     D_{\text{sem}} = 1 - S(\gamma).
 \end{equation}
-Since $S(\gamma)$ already reflects the joint effect of channel quality and compression aggressiveness through the semantic decoder's operating characteristic, $D_{\text{sem}} directly captures the residual meaning that is lost at the receiver, whether due to weak $\gamma$, high jamming interference, or an overly aggressive semantic compression ratio $M/K$ chosen at the encoder.
+Since $S(\gamma)$ already reflects the joint effect of channel quality and compression aggressiveness through the semantic decoder's operating characteristic, $D_{\text{sem}}$ directly captures the residual meaning that is lost at the receiver, whether due to weak $\gamma$, high jamming interference, or an overly aggressive semantic compression ratio $M/K$ chosen at the encoder.
 
 \subsection{Uplink Semantic Communication}
 The Target $T$ also acts as an active terrestrial transmitter, encoding its uplink messages through the same semantic encoder pipeline described at the start of Section III before transmission.
 \begin{itemize}
     \item \textbf{Uplink V2I (Target to BS via RIS R)}:
-    The Target transmits its semantic signal with power $P_T$. The cascaded channel gain from the Target to the BS $B$ via the RIS $R$ is $g_{T, R, B}$, and $P_{J, B} = P_J g_{J, B}$ is the received jamming interference at the BS $B$ from Jammer $J$. The conventional link-budget ratio is $\Gamma_{\text{uplink}} = \dfrac{P_T g_{T, R, B}}{P_{J, B} + \sigma^2}$, so that the semantic-effective SINR $\gamma_{\text{uplink}}$ at the BS $B$ is:
+    The Target transmits its semantic signal with power $P_T$. The cascaded channel gain from the Target to the BS $B$ via the RIS $R$ is $g_{T, R, B}$, and $P_{J, B} = P_J g_{J, B}$ is the received jamming interference at the BS $B$ from Jammer $J$. The SINR $\gamma_{\text{uplink}}$ at the BS $B$ is:
     \begin{equation}
-        \gamma_{\text{uplink}} = \left( \frac{K}{M} \right) \cdot \frac{P_T g_{T, R, B}}{P_{J, B} + \sigma^2}.
+        \gamma_{\text{uplink}} = \frac{P_T g_{T, R, B}}{P_{J, B} + \sigma^2}.
     \end{equation}
     
     \item \textbf{V2X Direct Semantic Link (Target to Mobile User U)}:
-    The Target communicates directly with the Mobile User $U$ via a ground link with channel gain $g_{T, U}$. The conventional link-budget ratio is $\Gamma_{\text{V2X}} = \dfrac{P_T g_{T, U}}{P_{J, U} + \sigma^2}$, so that the semantic-effective SINR $\gamma_{\text{V2X}}$ at the Mobile User $U$ is:
+    The Target communicates directly with the Mobile User $U$ via a ground link with channel gain $g_{T, U}$. The SINR $\gamma_{\text{V2X}}$ at the Mobile User $U$ is:
     \begin{equation}
-        \gamma_{\text{V2X}} = \left( \frac{K}{M} \right) \cdot \frac{P_T g_{T, U}}{P_{J, U} + \sigma^2}.
+        \gamma_{\text{V2X}} = \frac{P_T g_{T, U}}{P_{J, U} + \sigma^2}.
     \end{equation}
 \end{itemize}
 For both links, the same $K/M$ compression-induced dilution applies as in the downlink, since the Target's uplink and V2X messages are generated by the same semantic encoder pipeline and carried over the same $K$-symbol semantic codeword length. The semantic similarity, rate, and distortion are then evaluated using the corresponding formulas in Section III-C, with the same compression ratio $M/K$ and the same trained DeepSC SINR-vs-similarity table $S(\gamma)$ applying consistently across the uplink, V2X, downlink, and eavesdropper channels.
@@ -263,15 +269,15 @@ where $\text{SNR}_{\text{radar}, k, \text{dB}} = 10\log_{10}(\text{SNR}_{\text{r
 \subsection{Eavesdropper Wiretap Model and Secrecy Rate Analysis}
 The non-colluding eavesdroppers $E_i$ ($i \in \{1, 2, 3\}$) attempt to wiretap the downlink transmissions. Since the Base Station $B$ transmits a superposed NOMA signal, each eavesdropper $E_i$ attempts to intercept both the distant user's signal $s_F$ (Mobile User $U$) and the near user's signal $s_N$ (Target $T$). 
 
-Specifically, $E_i$ first decodes the far user's signal $s_F$ while treating the near user's signal $s_N$ as interference. Incorporating the compression-induced scaling, the semantic-effective wiretap SINR for signal $s_F$ at eavesdropper $E_i$ is:
+Specifically, $E_i$ first decodes the far user's signal $s_F$ while treating the near user's signal $s_N$ as interference. The wiretap SINR for signal $s_F$ at eavesdropper $E_i$ is:
 \begin{equation}
-    \gamma_{E_i, U} = \left( \frac{K}{M} \right) \cdot \frac{a_F P_B g_{E_i}}{a_N P_B g_{E_i} + P_{J, E_i} + \sigma^2},
+    \gamma_{E_i, U} = \frac{a_F P_B g_{E_i}}{a_N P_B g_{E_i} + P_{J, E_i} + \sigma^2},
 \end{equation}
 where $g_{E_i} = g_{\text{cascaded, } E_i}$ is the total effective channel gain from the BS $B$ to eavesdropper $E_i$ via the RIS, and $P_{J, E_i} = P_J g_{J, E_i}$ is the received jamming power.
 
-Assuming successful decoding of the far user signal, $E_i$ performs successive interference cancellation (SIC) to subtract $s_F$ and decode the near user's signal $s_N$. The semantic-effective wiretap SINR for signal $s_N$ at eavesdropper $E_i$ is then:
+Assuming successful decoding of the far user signal, $E_i$ performs successive interference cancellation (SIC) to subtract $s_F$ and decode the near user's signal $s_N$. The wiretap SINR for signal $s_N$ at eavesdropper $E_i$ is then:
 \begin{equation}
-    \gamma_{E_i, T} = \left( \frac{K}{M} \right) \cdot \frac{a_N P_B g_{E_i}}{P_{J, E_i} + \sigma^2}.
+    \gamma_{E_i, T} = \frac{a_N P_B g_{E_i}}{P_{J, E_i} + \sigma^2}.
 \end{equation}
 
 For each eavesdropper $E_i$, the corresponding intercepted semantic similarity scores ($S_{E_i}(\gamma_{E_i, U})$, $S_{E_i}(\gamma_{E_i, T})$) and semantic wiretap rates ($R_{\text{sem}, E_i, U}$, $R_{\text{sem}, E_i, T}$) are evaluated using the formulas in Section III-C.
@@ -294,42 +300,114 @@ In a simulation or training run consisting of $E$ episodes, this expectation is 
 \end{equation}
 
 \subsection{Multi-Objective Joint Secrecy and Sensing Optimization Problem}
-To jointly optimize the semantic communication security and radar sensing capabilities of the network, we formulate a joint optimization problem. Our goal is to maximize both the combined Average Secrecy Rate (ASR) of the users and the detection probability of target sensing, subject to constraints on the Cram\'{e}r-Rao Bound (CRB).
+The updated convergence study in the current implementation optimizes a single shared episode-wise objective for all five algorithms (Random Walk, SATD3PG, SASAC, MATD3PG, and MAPPO). The objective combines communication and sensing with equal weights and enforces the sensing-quality requirement through a CRB feasibility gate.
 
-For each episode $e$, let $R_{\text{sec, total}}^{(e)} = R_{\text{sec}, T}^{(e)} + R_{\text{sec}, U}^{(e)}$ denote the combined instantaneous secrecy rate. Since the secrecy rate and the detection probability operate on different numerical ranges, we normalize the secrecy rate values. Specifically, we find the maximum combined secrecy rate achieved across all simulation episodes:
+For each episode $e$, let
 \begin{equation}
-    R_{\text{max}} = \max_{j \in \{1,\dots,E\}} R_{\text{sec, total}}^{(j)}.
+    R_{\text{sec, total}}^{(e)} = R_{\text{sec}, T}^{(e)} + R_{\text{sec}, U}^{(e)}
 \end{equation}
-Then, the normalized secrecy rate ratio for each episode $e$ is:
+denote the combined instantaneous secrecy rate. To prevent a single anomalously large secrecy realization from compressing the normalized scale used during training and plotting, the implementation does not normalize by the absolute maximum. Instead, it computes a \emph{robust reference secrecy} $R_{\text{ref}}$ from the non-outlier episode values using Tukey's upper-fence rule:
 \begin{equation}
-    R_s^{\text{norm}, (e)} = \frac{R_{\text{sec, total}}^{(e)}}{R_{\text{max}}},
+    Q_1 = \operatorname{quantile}_{0.25}\!\left(\left\{R_{\text{sec, total}}^{(j)}\right\}_{j=1}^{E}\right), \quad
+    Q_3 = \operatorname{quantile}_{0.75}\!\left(\left\{R_{\text{sec, total}}^{(j)}\right\}_{j=1}^{E}\right),
 \end{equation}
-which restricts $R_s^{\text{norm}, (e)} \in [0, 1]$.
+\begin{equation}
+    \operatorname{IQR} = Q_3 - Q_1, \qquad
+    R_{\text{fence}} = Q_3 + 1.5\,\operatorname{IQR},
+\end{equation}
+\begin{equation}
+    R_{\text{ref}} = \max \left\{ R_{\text{sec, total}}^{(j)} : R_{\text{sec, total}}^{(j)} \le R_{\text{fence}} \right\}.
+\end{equation}
+The Average Secrecy-Rate Ratio (ASSR) used by the reinforcement-learning objective is then
+\begin{equation}
+    \operatorname{ASSR}^{(e)} = \operatorname{clip}\!\left(\frac{R_{\text{sec, total}}^{(e)}}{R_{\text{ref}}},\, 0,\, 1\right).
+\end{equation}
 
-Similarly, the combined detection probability $P_d^{(e)}$ is formed as a weighted sum of the average eavesdropper detection probability $P_{d, E}^{(e)}$ and the Target detection probability $P_{d, T}^{(e)}$:
+The sensing term is the combined detection probability
 \begin{equation}
-    P_d^{(e)} = w_3 P_{d, E}^{(e)} + w_4 P_{d, T}^{(e)},
+    P_d^{(e)} = w_3 P_{d,E}^{(e)} + w_4 P_{d,T}^{(e)},
 \end{equation}
-where $w_3, w_4 \ge 0$ are weighting parameters satisfying $w_3 + w_4 = 1$. The eavesdropper detection probability is defined as the mean over all three eavesdroppers, i.e., $P_{d, E}^{(e)} = \frac{1}{3} \sum_{i=1}^3 P_{d, E_i}^{(e)}$.
-
-With the normalized secrecy rate ratio $R_s^{\text{norm}, (e)}$ and the combined detection probability $P_d^{(e)}$ (both lying in the $[0,1]$ range), the multi-objective optimization utility function $U^{(e)}$ for each episode $e$ is expressed as:
+where
 \begin{equation}
-    U^{(e)} = w_1 R_s^{\text{norm}, (e)} + w_2 P_d^{(e)},
+    P_{d,E}^{(e)} = \frac{1}{3}\sum_{i=1}^{3} P_{d,E_i}^{(e)},
 \end{equation}
-where $w_1, w_2 \ge 0$ are the multi-objective weights satisfying $w_1 + w_2 = 1$.
+and the current implementation uses
+\begin{equation}
+    w_3 = w_4 = 0.5.
+\end{equation}
 
-Finally, the joint optimization problem taking both the Cram\'{e}r-Rao Bound (CRB) and the target/eavesdropper detection probabilities as constraints is formulated as:
+The unconstrained weighted utility is
+\begin{equation}
+    \widehat{U}^{(e)} = \lambda_1 \operatorname{ASSR}^{(e)} + \lambda_2 P_d^{(e)},
+\end{equation}
+with
+\begin{equation}
+    \lambda_1 = \lambda_2 = 0.5.
+\end{equation}
+
+In the implemented training environment, the CRB requirement is enforced through a feasibility indicator based on the Target-side CRB threshold $\delta = 10^8$:
+\begin{equation}
+    \mathbb{I}_{\text{CRB}}^{(e)} =
+    \begin{cases}
+        1, & \text{if } \operatorname{CRB}_{T}^{(e)} \le \delta, \\
+        0, & \text{otherwise.}
+    \end{cases}
+\end{equation}
+Accordingly, the final episode reward optimized by every algorithm in the updated codebase is
+\begin{equation}
+    U^{(e)} = \widehat{U}^{(e)} \cdot \mathbb{I}_{\text{CRB}}^{(e)}
+    = \left( 0.5\,\operatorname{ASSR}^{(e)} + 0.5\,P_d^{(e)} \right)\mathbb{I}_{\text{CRB}}^{(e)}.
+\end{equation}
+
+Thus, the practical optimization problem solved by the current convergence study is
 \begin{align}
-    \max_{\mathcal{X}} \quad & \frac{1}{E} \sum_{e=1}^{E} U^{(e)} \\
-    \text{s.t.} \quad & \text{CRB}_T^{(e)} \le \delta_T, \quad \forall e \in \{1,\dots,E\}, \\
-    & \text{CRB}_{E_i}^{(e)} \le \delta_{E_i}, \quad \forall i, \forall e \in \{1,\dots,E\}, \\
-    & P_{d, T}^{(e)} \ge \eta_T, \quad \forall e \in \{1,\dots,E\}, \\
-    & P_{d, E_i}^{(e)} \ge \eta_E, \quad \forall i, \forall e \in \{1,\dots,E\},
+    \max_{\pi \in \Pi} \quad & \frac{1}{E}\sum_{e=1}^{E} U^{(e)} \\
+    = \max_{\pi \in \Pi} \quad & \frac{1}{E}\sum_{e=1}^{E}
+    \left( 0.5\,\operatorname{ASSR}^{(e)} + 0.5\,P_d^{(e)} \right)\mathbb{I}_{\text{CRB}}^{(e)},
 \end{align}
-where $\mathcal{X}$ represents the optimization variables (including power allocation, beamforming vectors, and RIS phase shifts), $\delta_T, \delta_{E_i}$ denote the maximum allowable CRB thresholds for location/angle estimation of the Target $T$ and the eavesdroppers $E_i$, respectively, and $\eta_T, \eta_E$ represent the minimum required target detection probability thresholds.
+where $\pi$ denotes the policy (or set of agent policies) controlling UAV motion, jammer behavior, RIS/UAV positioning decisions, and power-allocation variables within the action parameterization used by the simulator.
+
+\subsection{MAPPO Training Hyperparameters Used in the Updated Convergence Study}
+The Multi-Agent Proximal Policy Optimization (MAPPO) configuration used in the current convergence script is summarized in Table~\ref{tab:mappo_hparams}. These are the exact settings used in the implementation that now optimizes the unified $\left(0.5\,\operatorname{ASSR} + 0.5\,P_d\right)\mathbb{I}_{\text{CRB}}$ objective.
+
+\begin{table}[H]
+    \centering
+    \caption{MAPPO hyperparameters used in the updated convergence study implementation.}
+    \label{tab:mappo_hparams}
+    \begin{tabular}{ll}
+        \toprule
+        Hyperparameter & Value \\
+        \midrule
+        Number of episodes & 8000 \\
+        Steps per episode & 50 \\
+        Episodes per PPO update & 8 \\
+        Actor learning rate & $2.5 \times 10^{-4}$ \\
+        Critic learning rate & $2.5 \times 10^{-4}$ \\
+        Discount factor $\gamma$ & 0.95 \\
+        GAE parameter $\lambda$ & 0.95 \\
+        PPO epochs per update & 5 \\
+        PPO mini-batch size & 64 \\
+        Clipping parameter $\epsilon$ & 0.2 \\
+        Entropy coefficient & 0.01 \\
+        Gradient clipping norm & 0.5 \\
+        Number of cooperative agents & 3 \\
+        Action dimensions per agent & $(3, 3, 3)$ \\
+        Hidden dimension (actor/critic MLPs) & 64 \\
+        Hidden layers per network & 2 \\
+        Activation function & ReLU \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{final.jpg}
+    \caption{Convergence comparison showing the rolling 100-episode average multi-objective utility $U=\lambda_1\,\mathrm{ASSR}+\lambda_2\,P_d$ for all four RL algorithms (MAPPO, MATD3PG, SASAC, and SATD3PG) on the Week 9 system model.}
+    \label{fig:rolling_secrecy}
+\end{figure}
 
 \section{Conclusion and Future Directions}
-In this weekly report, we presented the complete system architecture and mathematical foundations of the Week 9 semantic-aware ISAC network. The physical propagation links, PD-NOMA coding with semantic-aware SIC operating on reconstructed semantic representations rather than raw bit streams, semantic metrics (similarity, rate, distortion) governed by a consistent compression ratio $M/K$ across all links, uplink V2I/V2X links, jammer radar sensing, and multi-eavesdropper topologies have been successfully integrated into a cohesive, object-oriented Python implementation.
+In this updated version of the 7 August report, we retain the original Week 9 semantic-aware ISAC system model while correcting the convergence-study objective to match the current implementation exactly. In particular, all five algorithms are now evaluated under the same episode-wise objective $\left(0.5\,\operatorname{ASSR} + 0.5\,P_d\right)\mathbb{I}_{\text{CRB}}$, where ASSR is normalized using a robust non-outlier secrecy reference and the CRB constraint is enforced through a Target-side feasibility indicator. The report also records the exact MAPPO hyperparameters used in the updated convergence script so that the optimization setup, implementation, and plotted results remain mathematically consistent and reproducible.
 
 \bibliographystyle{IEEEtran}
 

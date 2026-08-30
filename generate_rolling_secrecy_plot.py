@@ -16,6 +16,7 @@ optimization objective, not raw secrecy rate alone:
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output_final")
 
@@ -24,13 +25,30 @@ LAMBDA2_PD = 0.5
 W3_PD_EAVES = 0.5
 W4_PD_TARGET = 0.5
 ROLLING_WINDOW = 100
+CRB_THRESHOLD = 1.0e8
 
 algos = {
     "MAPPO (Proposed)": ("mappo_history.csv", "purple"),
     "MATD3PG": ("matd3pg_history.csv", "blue"),
-    "SAC": ("sac_history.csv", "green"),
-    "Single Agent TD3PG": ("td3pg_single_history.csv", "orange"),
+    "SASAC": ("sasac_history.csv", "green"),
+    "SATD3PG": ("satd3pg_history.csv", "orange"),
 }
+
+
+def robust_max_reference(values: pd.Series) -> float:
+    """Return the maximum non-outlier secrecy value for stable ASSR scaling."""
+    arr = values.to_numpy(dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return 1.0
+
+    q1 = float(np.percentile(arr, 25))
+    q3 = float(np.percentile(arr, 75))
+    iqr = q3 - q1
+    upper_fence = q3 + 1.5 * iqr
+    inliers = arr[arr <= upper_fence]
+    ref = float(np.max(inliers)) if inliers.size else float(np.max(arr))
+    return ref if ref > 1e-12 else 1.0
 
 plt.figure(figsize=(10, 6))
 
@@ -42,19 +60,19 @@ for name, (filename, color) in algos.items():
 
     df = pd.read_csv(filepath)
 
-    r_max = df["secrecy_total"].max()
-    r_max = r_max if r_max > 1e-12 else 1.0
-    assr = df["secrecy_total"] / r_max
+    r_ref = robust_max_reference(df["secrecy_total"])
+    assr = (df["secrecy_total"] / r_ref).clip(lower=0.0, upper=1.0)
 
     pd_combined = W3_PD_EAVES * df["pd_eaves"] + W4_PD_TARGET * df["pd_target"]
-    utility = LAMBDA1_ASSR * assr + LAMBDA2_PD * pd_combined
+    crb_feasible = (df["crb_target"] <= CRB_THRESHOLD).astype(float)
+    utility = (LAMBDA1_ASSR * assr + LAMBDA2_PD * pd_combined) * crb_feasible
 
     rolling_utility = utility.rolling(window=ROLLING_WINDOW, min_periods=1).mean()
     plt.plot(df["episode"], rolling_utility, label=name, color=color, linewidth=2)
 
 plt.title("Convergence Comparison: Rolling 100 Average Multi-Objective Utility")
 plt.xlabel("Episode")
-plt.ylabel(r"Rolling Average Utility ($\lambda_1$ ASSR $+\ \lambda_2\ P_d$)")
+plt.ylabel(r"Rolling Avg Utility (($\lambda_1$ ASSR $+\ \lambda_2\ P_d$) $\times$ CRB-feasible)")
 plt.grid(True)
 plt.legend()
 

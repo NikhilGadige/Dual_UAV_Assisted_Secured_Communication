@@ -44,7 +44,7 @@ and Mohli~Thapa%
 \maketitle
 
 \begin{abstract}
-Integrated Sensing and Communication (ISAC) has emerged as a key technology for 6G networks, enabling co-existence and mutual reinforcement of wireless transmissions and radar sensing. However, the open nature of the propagation channels in unmanned aerial vehicle (UAV) networks makes them highly vulnerable to eavesdropping. In this paper, we study an ISAC-enabled dual-UAV network, incorporating a passive reconfigurable intelligent surface (RIS) mounted on a primary UAV and a full-duplex jammer mounted on a secondary UAV. The system utilizes power-domain non-orthogonal multiple access (PD-NOMA) to serve a dynamic distant user and a stationary vehicle target, which also acts as a monostatic radar sensing target for the jammer. To resolve semantic-aware secure transmission, we model semantic similarity scores and semantic rate functions mapped from physical signal-to-interference-plus-noise ratios (SINRs). We formulate a joint optimization problem to maximize the average secrecy rate subject to sensing accuracy, Cram\'{e}r-Rao Bound (CRB) constraints, collision avoidance, and power boundaries. Since the system involves high-dimensional continuous states and non-convex constraints, we formulate the optimization problem as a Markov Decision Process (MDP) and normalize the state representations to eliminate network saturation. We implement and evaluate five deep reinforcement learning (DRL) paradigms: Random Walk, Single-Agent Soft Actor-Critic (SAC), Single-Agent Twin Delayed Deep Deterministic Policy Gradient (TD3PG), Multi-Agent Twin Delayed DDPG (MATD3PG), and Multi-Agent Proximal Policy Optimization (MAPPO). The convergence characteristics are analyzed through 100-episode rolling average secrecy rate metrics. The results show that continuous-action maximum entropy paradigms (such as SAC) achieve rapid convergence and escape local minima, realizing high secrecy rates up to 0.46 M-suts/s.
+Integrated Sensing and Communication (ISAC) has emerged as a key technology for 6G networks, enabling co-existence and mutual reinforcement of wireless transmissions and radar sensing. However, the open nature of the propagation channels in unmanned aerial vehicle (UAV) networks makes them highly vulnerable to eavesdropping. In this paper, we study an ISAC-enabled dual-UAV network, incorporating a passive reconfigurable intelligent surface (RIS) mounted on a primary UAV and a full-duplex jammer mounted on a secondary UAV. The system utilizes power-domain non-orthogonal multiple access (PD-NOMA) to serve a dynamic distant user and a stationary vehicle target, which also acts as a monostatic radar sensing target for the jammer. To resolve semantic-aware secure transmission, we model semantic similarity scores and semantic rate functions mapped from physical signal-to-interference-plus-noise ratios (SINRs). We formulate a joint optimization problem to maximize the average secrecy rate subject to sensing accuracy, Cram\'{e}r-Rao Bound (CRB) constraints, collision avoidance, and power boundaries. Since the system involves high-dimensional continuous states and non-convex constraints, we formulate the optimization problem as a Markov Decision Process (MDP) and normalize the state representations to eliminate network saturation. We implement and evaluate five deep reinforcement learning (DRL) paradigms: Random Walk, SASAC, SATD3PG, MATD3PG, and MAPPO. The convergence characteristics are analyzed through 100-episode rolling average secrecy rate metrics. The results show that continuous-action maximum entropy paradigms (such as SASAC) achieve rapid convergence and escape local minima, realizing high secrecy rates up to 0.46 M-suts/s.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -58,7 +58,7 @@ Modern wireless communication systems are undergoing a paradigm shift towards th
 
 To address these vulnerabilities, Physical Layer Security (PLS) is deployed to maintain a positive secrecy rate between legitimate and wiretap channels. In this paper, we investigate a secure ISAC dual-UAV network, comprising a passive reconfigurable intelligent surface (RIS) mounted on a primary UAV and an active full-duplex jammer mounted on a secondary UAV. The base station (BS) transmits superposed signals using power-domain non-orthogonal multiple access (PD-NOMA) to simultaneously serve a stationary vehicle target (Near User) and a mobile user (Far User). The jammer UAV emits artificial noise to degrade the intercept capabilities of Poisson-distributed ground eavesdroppers, while concurrently utilizing its transmit signals for monostatic radar sensing on the vehicle target.
 
-Furthermore, we transition the network metric evaluation from classical Shannon capacity to semantic-aware communication. Semantic similarity is represented as a sigmoidal function of the received SINR, mapping physical signals to the semantic concept domain. We formulate the secure transmission as an optimization problem and resolve it using Deep Reinforcement Learning (DRL) paradigms. To prevent training failures caused by state-scale mismatches (dying ReLUs), we normalize the state observations. We compare the convergence performance of five algorithms: Random Walk, TD3PG, SAC, MATD3PG, and MAPPO, plotting the rolling 100-episode averages to demonstrate learning progress.
+Furthermore, we transition the network metric evaluation from classical Shannon capacity to semantic-aware communication. Semantic similarity is represented as a sigmoidal function of the received SINR, mapping physical signals to the semantic concept domain. We formulate the secure transmission as an optimization problem and resolve it using Deep Reinforcement Learning (DRL) paradigms. To prevent training failures caused by state-scale mismatches (dying ReLUs), we normalize the state observations. We compare the convergence performance of five algorithms: Random Walk, SATD3PG, SASAC, MATD3PG, and MAPPO, plotting the rolling 100-episode averages to demonstrate learning progress.
 
 \section{System Model and Problem Formulation}
 
@@ -75,7 +75,7 @@ We consider a dual-UAV cooperative ISAC network, as illustrated in Fig.~\ref{fig
 \begin{figure}[H]
     \centering
     % Placeholders for system model image
-    \includegraphics[width=0.6\textwidth]{system-model.png}
+    \includegraphics[width=0.6\textwidth]{system-model.jpg}
     \caption{System model of the secure semantic-aware ISAC dual-UAV network featuring RIS reflection, full-duplex jamming, PD-NOMA, and monostatic radar sensing.}
     \label{fig:system_model}
 \end{figure}
@@ -117,11 +117,15 @@ The fading power envelope is $\chi_{AB}(t) = |g_{AB}(t)|^2$, with $g_{AB}(t) \si
 \subsection{Power-Domain NOMA Downlink with Semantic SIC}
 The BS transmits superposed signals for the Near User (Target T) and the Far User (Mobile User U). The total transmit power is $P_{BS}$. The NOMA power allocation factor for the Far User is $a_F \in [0.5, 0.99]$, with the remainder $a_N = 1 - a_F$ allocated to the Near User. The superposed signal is $x = \sqrt{a_F P_{BS}} s_F + \sqrt{a_N P_{BS}} s_N$.
 
-The cascaded BS-to-RIS-to-User channel gain is defined as:
+The cascaded BS-to-RIS-to-User link utilizes passive analog reflecting beamforming at the RIS. Let the RIS phase shift matrix (beamforming weight matrix) be denoted as $\mathbf{\Phi}(t) = \text{diag}\left( \beta_1 e^{j \phi_1(t)}, \beta_2 e^{j \phi_2(t)}, \dots, \beta_N e^{j \phi_N(t)} \right)$, where $\beta_n \in [0, 1]$ is the amplitude reflection coefficient (assumed to be 1 for ideal reflection) and $\phi_n(t) \in [0, 2\pi)$ is the phase shift of the $n$-th reflecting element. The cascaded channel gain is:
 \begin{equation}
-    g_i(t) = h_{BR}(t) \cdot h_{Ri}(t) \cdot N^2, \quad j \in \{T, U\},
+    g_i(t) = | \mathbf{h}_{BR}^H(t) \mathbf{\Phi}(t) \mathbf{h}_{Ri}(t) |^2, \quad i \in \{T, U\},
 \end{equation}
-where $N^2$ represents the passive RIS array reflecting gain. The received jamming interference power from Jammer $J$ is $I_{jam, i}(t) = P_J(t) h_{Ji}(t)$.
+where $\mathbf{h}_{BR}(t) \in \mathbb{C}^{N \times 1}$ and $\mathbf{h}_{Ri}(t) \in \mathbb{C}^{N \times 1}$ are the multi-antenna channel vectors from BS-to-RIS and RIS-to-user $i$ respectively. Under optimal phase alignment (coherent beamforming), the phase shifts are configured as $\phi_n(t) = - (\angle h_{BR, n}(t) + \angle h_{Ri, n}(t))$, aligning the phases of all reflected paths. This results in the maximized coherent channel gain:
+\begin{equation}
+    g_i(t) = h_{BR}(t) \cdot h_{Ri}(t) \cdot N^2, \quad i \in \{T, U\},
+\end{equation}
+where $h_{BR}(t)$ and $h_{Ri}(t)$ are the path loss gains, and the factor $N^2$ represents the passive array beamforming reflecting gain. The received jamming interference power from Jammer $J$ is $I_{jam, i}(t) = P_J(t) h_{Ji}(t)$.
 
 Under PD-NOMA, users are ordered by channel strength ($g_N \ge g_F$). The Far User $U$ decodes its signal $s_F$ directly, treating $s_N$ as interference:
 \begin{equation}
@@ -147,7 +151,31 @@ If $S_{SIC}(t) < 0.5$, SIC fails. Near User $T$ decodes $s_N$ directly, treating
 \end{equation}
 
 \subsection{Eavesdropper Interception Model}
-Ground eavesdroppers $E_k$ ($k=1,2,3$) attempt to decode both $s_F$ and $s_N$. The cascaded gain BS-RIS-Eavesdropper is $g_{E_k}(t) = h_{BR}(t) \cdot h_{RE_k}(t) \cdot N^2$. The jamming power at $E_k$ is $I_{jam, E_k}(t) = P_J(t) h_{JE_k}(t)$. Eavesdropper $E_k$ decodes Far User's signal $s_F$ with:
+Ground eavesdroppers $E_k$ ($k=1,2,3$) attempt to decode both $s_F$ and $s_N$. In practice, the exact locations of the eavesdroppers are unknown to the legitimate nodes, and only their estimated coordinates $\tilde{\mathbf{w}}_{E_k} = [\tilde{x}_{E_k}, \tilde{y}_{E_k}]^T$ can be obtained. The true position $\mathbf{w}_{E_k}$ of eavesdropper $E_k$ is assumed to lie within a disk of uncertainty radius $\Delta Q_k$ centered at $\tilde{\mathbf{w}}_{E_k}$:
+\begin{equation}
+    \|\mathbf{w}_{E_k} - \tilde{\mathbf{w}}_{E_k}\| \le \Delta Q_k.
+\end{equation}
+To evaluate security in the worst-case scenario, the channel gains for the eavesdropper interception links are optimized (maximized) over the uncertainty region, while the jamming channel gain is minimized to limit the artificial noise power received.
+Specifically, for the transmitter-to-eavesdropper links (e.g., RIS-to-Eve), the worst-case 2D horizontal distance is minimized:
+\begin{equation}
+    d_{R, E_k}^{2D, \min}(t) = \max\left( \|\mathbf{q}_{R, 2D}(t) - \tilde{\mathbf{w}}_{E_k}\| - \Delta Q_k, 0 \right).
+\end{equation}
+The cascaded channel gain $g_{E_k}(t)$ is computed using the modified 3D distance $d_{R, E_k}^{\min}(t) = \sqrt{(d_{R, E_k}^{2D, \min}(t))^2 + z_R^2(t)}$:
+\begin{equation}
+    g_{E_k}(t) = h_{BR}(t) \cdot h_{RE_k}^{\max}(t) \cdot N^2,
+\end{equation}
+where $h_{RE_k}^{\max}(t)$ incorporates the minimized path loss using $d_{R, E_k}^{\min}(t)$.
+Conversely, for the jammer-to-eavesdropper link, the worst-case 2D distance is maximized to minimize the jamming interference power received by the eavesdropper:
+\begin{equation}
+    d_{J, E_k}^{2D, \max}(t) = \|\mathbf{q}_{J, 2D}(t) - \tilde{\mathbf{w}}_{E_k}\| + \Delta Q_k.
+\end{equation}
+The jamming power at $E_k$ is computed using the modified 3D distance $d_{J, E_k}^{\max}(t) = \sqrt{(d_{J, E_k}^{2D, \max}(t))^2 + z_J^2(t)}$:
+\begin{equation}
+    I_{jam, E_k}(t) = P_J(t) h_{JE_k}^{\min}(t),
+\end{equation}
+where $h_{JE_k}^{\min}(t)$ incorporates the maximized path loss using $d_{J, E_k}^{\max}(t)$.
+
+Eavesdropper $E_k$ decodes Far User's signal $s_F$ with:
 \begin{equation}
     \gamma_{E_k \to U}(t) = \frac{a_F P_{BS} g_{E_k}(t)}{(1 - a_F) P_{BS} g_{E_k}(t) + I_{jam, E_k}(t) + \sigma^2}.
 \end{equation}
@@ -196,16 +224,16 @@ denote the average secrecy rate achieved during episode $e \in \{1, \dots, E\}$.
 \end{equation}
 where $\text{ASSR}^{(e)}$ (Average Sum Secrecy Ratio) is the normalized secrecy rate ratio for episode $e$. The combined detection probability for episode $e$ is a weighted sum of the average eavesdropper detection probability $P_{d,E}^{(e)}$ and the Target detection probability $P_{d,T}^{(e)}$:
 \begin{equation}
-    P_d^{(e)} = w_3 P_{d,E}^{(e)} + w_4 P_{d,T}^{(e)}, \qquad w_3 + w_4 = 1,
+    P_d^{(e)} = \lambda_1 P_{d,E}^{(e)} + \lambda_2 P_{d,T}^{(e)}, \qquad \lambda_1 + \lambda_2 = 1,
 \end{equation}
 with $P_{d,E}^{(e)} = \frac{1}{3}\sum_{k=1}^3 P_{d,E_k}^{(e)}$. Both $\text{ASSR}^{(e)}$ and $P_d^{(e)}$ lie in $[0,1]$, so the per-episode multi-objective utility, combining the normalized secrecy performance with the detection probability, is denoted:
 \begin{equation}
-    U^{(e)} \triangleq \lambda_1 \,\text{ASSR}^{(e)} + \lambda_2 \,P_d^{(e)}, \qquad \lambda_1 + \lambda_2 = 1.
+    U^{(e)} \triangleq w_1 \,\text{ASSR}^{(e)} + w_2 \,P_d^{(e)}, \qquad w_1 + w_2 = 1.
 \end{equation}
 The joint optimization problem is therefore to maximize this combined secrecy-and-detection utility, averaged over the run, subject to the Cram\'{e}r-Rao Bound constraint on target localization accuracy, the minimum inter-UAV separation, and the transmit power / NOMA allocation bounds -- none of which change from the original formulation:
 \begin{subequations}
 \begin{align}
-    \max_{\mathbf{q}_R, \mathbf{q}_J, P_{BS}, P_J, a_F} \quad & \frac{1}{E} \sum_{e=1}^{E} U^{(e)} = \frac{1}{E} \sum_{e=1}^{E} \left[ \lambda_1 \,\text{ASSR}^{(e)} + \lambda_2 \,P_d^{(e)} \right] \\
+    \max_{\mathbf{q}_R, \mathbf{q}_J, P_{BS}, P_J, a_F} \quad & \frac{1}{E} \sum_{e=1}^{E} U^{(e)} = \frac{1}{E} \sum_{e=1}^{E} \left[ w_1 \,\text{ASSR}^{(e)} + w_2 \,P_d^{(e)} \right] \\
     \text{s.t.} \quad & CRB_T(t) \le CRB_{\max}, \quad \forall t, \\
     & \|\mathbf{q}_R(t) - \mathbf{q}_J(t)\| \ge d_{min}, \quad \forall t, \\
     & P_{BS,\min} \le P_{BS}(t) \le P_{BS,\max}, \quad \forall t, \\
@@ -213,7 +241,7 @@ The joint optimization problem is therefore to maximize this combined secrecy-an
     & 0.5 \le a_F(t) \le 0.99, \quad \forall t,
 \end{align}
 \end{subequations}
-where $CRB_{\max} = 1.0 \times 10^8$ and $d_{min} = 10.0$\,m, matching the original constraint values. Section~\ref{sec:convergence} reports results with $\lambda_1 = \lambda_2 = 0.5$ and $w_3 = w_4 = 0.5$.
+where $CRB_{\max} = 1.0 \times 10^8$ and $d_{min} = 10.0$\,m, matching the original constraint values. Section~\ref{sec:convergence} reports results with $w_1 = w_2 = 0.5$ and $\lambda_1 = \lambda_2 = 0.5$.
 
 \section{Deep Reinforcement Learning Framework}
 To solve the non-convex optimization problem in real-time, we formulate the decision process as a Markov Decision Process (MDP) defined by the tuple $\langle \mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \gamma \rangle$.
@@ -243,8 +271,8 @@ To solve the non-convex optimization problem in real-time, we formulate the deci
 We implement and evaluate five algorithms in the convergence study:
 \begin{enumerate}
     \item \textbf{Random Walk}: Actions are sampled uniformly at random from $[-1, 1]^9$ as a baseline.
-    \item \textbf{Single-Agent TD3PG}: A continuous, deterministic actor-critic algorithm that uses twin critics to bound overestimation bias and delayed policy updates to stabilize learning.
-    \item \textbf{Single-Agent SAC}: An off-policy maximum entropy actor-critic algorithm that optimizes for both expected return and policy entropy $\mathcal{H}(\pi(\cdot|s))$, ensuring robust exploration and escaping local minima.
+    \item \textbf{SATD3PG}: A continuous, deterministic actor-critic algorithm that uses twin critics to bound overestimation bias and delayed policy updates to stabilize learning.
+    \item \textbf{SASAC}: An off-policy maximum entropy actor-critic algorithm that optimizes for both expected return and policy entropy $\mathcal{H}(\pi(\cdot|s))$, ensuring robust exploration and escaping local minima.
     \item \textbf{MATD3PG}: A multi-agent extension of TD3PG. The action space is partitioned among three agents: \texttt{ris\_uav} (RIS velocity), \texttt{jammer\_uav} (Jammer velocity), and \texttt{power\_alloc} (transmit powers and NOMA power allocation). The agents employ centralized critics that evaluate joint actions while maintaining local decentralized actors.
     \item \textbf{MAPPO}: A multi-agent extension of PPO utilizing a centralized value function $V(s)$. The policy is optimized using clipped trust region objective functions:
     \begin{equation}
@@ -267,7 +295,7 @@ We conduct simulations in Python utilizing PyTorch. The key parameters of the IS
 \midrule
 Carrier Frequency ($f_c$) & 2.4 GHz \\
 System Bandwidth ($B$) & 1.0 MHz \\
-AWGN Noise Power ($\sigma^2$) & $10^{-13}$ W ($-100$ dBm) \\
+AWGN Noise Power ($\sigma^2$) & $10^{-10}$ W ($-70$ dBm) \\
 Initial BS Transmit Power ($P_{BS}$) & 2.0 W \\
 Initial Jammer Transmit Power ($P_J$) & 0.5 W \\
 RIS Array Size ($N$) & 64 elements \\
@@ -281,12 +309,12 @@ Maximum Step Distance ($v_{\max}$) & 5.0 m \\
 \end{table}
 
 \subsection{Convergence Comparison}
-The five algorithms were evaluated over training episodes to compare their capability to escape the zero-secrecy landscape. Per the Problem Formulation of Section~\ref{sec:convergence}, the metric that reflects the actual joint optimization objective is the multi-objective utility $U^{(e)} = \lambda_1 \,\text{ASSR}^{(e)} + \lambda_2 \,P_d^{(e)}$, not the raw secrecy rate alone: raw secrecy and the detection probability live on different scales, and plotting secrecy in isolation silently drops the sensing/detection term of the objective. The 100-episode rolling average of $U^{(e)}$ (with $\lambda_1 = \lambda_2 = 0.5$, $w_3 = w_4 = 0.5$) is plotted in Fig.~\ref{fig:rolling_secrecy} for the four RL algorithms (MAPPO, MATD3PG, SAC, and Single Agent TD3PG); Random Walk is excluded as its utility is negligible throughout.
+The five algorithms were evaluated over training episodes to compare their capability to escape the zero-secrecy landscape. Per the Problem Formulation of Section~\ref{sec:convergence}, the metric that reflects the actual joint optimization objective is the multi-objective utility $U^{(e)} = \lambda_1 \,\text{ASSR}^{(e)} + \lambda_2 \,P_d^{(e)}$, not the raw secrecy rate alone: raw secrecy and the detection probability live on different scales, and plotting secrecy in isolation silently drops the sensing/detection term of the objective. The 100-episode rolling average of $U^{(e)}$ (with $\lambda_1 = \lambda_2 = 0.5$, $w_3 = w_4 = 0.5$) is plotted in Fig.~\ref{fig:rolling_secrecy} for the four RL algorithms (MAPPO, MATD3PG, SASAC, and SATD3PG); Random Walk is excluded as its utility is negligible throughout.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.7\textwidth]{output_final/rolling_secrecy_comparison.png}
-    \caption{Convergence comparison showing the rolling 100-episode average multi-objective utility $U = \lambda_1 \,\text{ASSR} + \lambda_2 \,P_d$ for all four RL algorithms (MAPPO, MATD3PG, SAC, and Single Agent TD3PG) on the Week 9 system model.}
+    \caption{Convergence comparison showing the rolling 100-episode average multi-objective utility $U = \lambda_1 \,\text{ASSR} + \lambda_2 \,P_d$ for all four RL algorithms (MAPPO, MATD3PG, SASAC, and SATD3PG) on the Week 9 system model.}
     \label{fig:rolling_secrecy}
 \end{figure}
 
@@ -294,13 +322,13 @@ The convergence curves demonstrate that:
 \begin{itemize}
     \item Random Walk fails to establish secure communication, keeping raw secrecy rate close to zero (below $10^{-6}$ M-suts/s throughout the run), so its utility never rises appreciably above zero.
     \item MATD3PG converges fastest, reaching roughly half its eventual peak utility by around episode 140 and settling into a stable rolling-average utility of about $0.13$ for the remainder of training.
-    \item Single-Agent SAC converges only slightly slower (around episode 640), reaching a comparable steady-state rolling-average utility of about $0.14$, the highest sustained value among all algorithms, consistent with its raw secrecy rate also peaking highest (up to $0.61$ M-suts/s) among the compared methods.
-    \item MAPPO takes considerably longer to ramp up (around episode 1350) and remains the most volatile of the four, swinging between roughly $0.07$ and its peak of $0.20$ utility, and ending training around $0.11$ -- higher peak potential, but less stable than MATD3PG or SAC over a long run.
-    \item Single-Agent TD3PG converges early (around episode 300) but plateaus at the lowest steady-state utility of the four, around $0.06$, reflecting a comparatively weaker balance of secrecy and detection performance once its policy stabilizes.
+    \item SASAC converges only slightly slower (around episode 640), reaching a comparable steady-state rolling-average utility of about $0.14$, the highest sustained value among all algorithms, consistent with its raw secrecy rate also peaking highest (up to $0.61$ M-suts/s) among the compared methods.
+    \item MAPPO takes considerably longer to ramp up (around episode 1350) and remains the most volatile of the four, swinging between roughly $0.07$ and its peak of $0.20$ utility, and ending training around $0.11$ -- higher peak potential, but less stable than MATD3PG or SASAC over a long run.
+    \item SATD3PG converges early (around episode 300) but plateaus at the lowest steady-state utility of the four, around $0.06$, reflecting a comparatively weaker balance of secrecy and detection performance once its policy stabilizes.
 \end{itemize}
-These results, computed over a full $8000$-episode training run per algorithm, revise the earlier raw-secrecy-only reading of this experiment: SAC and MATD3PG -- not MAPPO -- sustain the strongest joint secrecy/sensing utility once both objective terms are accounted for, and MAPPO's high raw secrecy rate does not translate into a proportionally higher or more stable combined utility.
+These results, computed over a full $8000$-episode training run per algorithm, revise the earlier raw-secrecy-only reading of this experiment: SASAC and MATD3PG -- not MAPPO -- sustain the strongest joint secrecy/sensing utility once both objective terms are accounted for, and MAPPO's high raw secrecy rate does not translate into a proportionally higher or more stable combined utility.
 
 \section{Conclusion}
-In this paper, we investigated joint trajectory and power optimization for secure multi-agent UAV networks under an integrated sensing and communication (ISAC) architecture. By normalizing the observation space and incorporating direct SNR-JNR guidance, we successfully resolved training saturation and escaped deceptive reward local minima. We provided a head-to-head comparison of five reinforcement learning paradigms. The simulation results demonstrated that continuous-action maximum-entropy algorithms (such as SAC) are highly suited for secure ISAC networks, achieving fast convergence and establishing high system secrecy rates.
+In this paper, we investigated joint trajectory and power optimization for secure multi-agent UAV networks under an integrated sensing and communication (ISAC) architecture. By normalizing the observation space and incorporating direct SNR-JNR guidance, we successfully resolved training saturation and escaped deceptive reward local minima. We provided a head-to-head comparison of five reinforcement learning paradigms. The simulation results demonstrated that continuous-action maximum-entropy algorithms (such as SASAC) are highly suited for secure ISAC networks, achieving fast convergence and establishing high system secrecy rates.
 
 \end{document}

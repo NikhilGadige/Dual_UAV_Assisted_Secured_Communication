@@ -63,6 +63,7 @@ class EnvConfig:
     eve_region_xmax: float = 1000.0
     eve_region_ymin: float = 0.0
     eve_region_ymax: float = 1000.0
+    eve_uncertainty_radius: float = 15.0
     # --- Observation / state representation ---
     observation_mode: str = "full"
     normalize_observations: bool = True
@@ -508,6 +509,35 @@ class UAVEnvironment:
             )
         return channel_gain(d, fading, alpha=self.config.alpha, beta0=self.config.beta0)
 
+    def compute_channel_gain_uncertain(
+        self, tx_pos: np.ndarray, rx_pos: np.ndarray, delta_q: float, maximize: bool, fading: float
+    ) -> float:
+        tx_pos = np.asarray(tx_pos, dtype=float)
+        rx_pos = np.asarray(rx_pos, dtype=float)
+        dx = tx_pos[0] - rx_pos[0]
+        dy = tx_pos[1] - rx_pos[1]
+        dz = abs(tx_pos[2] - rx_pos[2])
+        
+        d_2d = np.sqrt(dx * dx + dy * dy)
+        if maximize:
+            d_2d_mod = max(d_2d - delta_q, 0.0)
+        else:
+            d_2d_mod = d_2d + delta_q
+            
+        d_3d_mod = np.sqrt(d_2d_mod * d_2d_mod + dz * dz)
+        
+        if self.config.use_los_model:
+            if d_2d_mod < 1e-10:
+                theta_mod = 90.0 if dz > 1e-10 else 0.0
+            else:
+                theta_mod = float(np.degrees(np.arctan2(dz, d_2d_mod)))
+            return channel_gain_los_aware(
+                d_3d_mod, theta_mod, fading,
+                self.config.alpha_los, self.config.alpha_nlos,
+                self.config.beta0, self.config.los_a, self.config.los_b,
+            )
+        return channel_gain(d_3d_mod, fading, alpha=self.config.alpha, beta0=self.config.beta0)
+
     def compute_all_channel_gains(self) -> dict:
         gains = {}
         relay_position = self.jammer_position if self.roles_swapped else self.relay_position
@@ -522,19 +552,23 @@ class UAVEnvironment:
                 gains["h_UE"] = np.array([], dtype=float)
                 gains["h_JE"] = np.array([], dtype=float)
             else:
-                h_UE_list = [self.compute_channel_gain(
-                    self.user_position, np.append(self.eve_positions[i], 0.0), self.fading["UE"][i])
+                h_UE_list = [self.compute_channel_gain_uncertain(
+                    self.user_position, np.append(self.eve_positions[i], 0.0),
+                    self.config.eve_uncertainty_radius, True, self.fading["UE"][i])
                     for i in range(n)]
-                h_JE_list = [self.compute_channel_gain(
-                    jammer_position, np.append(self.eve_positions[i], 0.0), self.fading["JE"][i])
+                h_JE_list = [self.compute_channel_gain_uncertain(
+                    jammer_position, np.append(self.eve_positions[i], 0.0),
+                    self.config.eve_uncertainty_radius, False, self.fading["JE"][i])
                     for i in range(n)]
                 gains["h_UE"] = np.array(h_UE_list)
                 gains["h_JE"] = np.array(h_JE_list)
         else:
-            gains["h_UE"] = self.compute_channel_gain(
-                self.user_position, self.eve_position, self.fading["UE"])
-            gains["h_JE"] = self.compute_channel_gain(
-                jammer_position, self.eve_position, self.fading["JE"])
+            gains["h_UE"] = self.compute_channel_gain_uncertain(
+                self.user_position, self.eve_position,
+                self.config.eve_uncertainty_radius, True, self.fading["UE"])
+            gains["h_JE"] = self.compute_channel_gain_uncertain(
+                jammer_position, self.eve_position,
+                self.config.eve_uncertainty_radius, False, self.fading["JE"])
         if self.config.enable_ntn:
             self.ntn_fading_sat_relay = generate_fading(
                 "rician", K=10.0 ** (self.config.ntn_rician_k_db / 10.0))
@@ -559,14 +593,16 @@ class UAVEnvironment:
                 d_UE = 0.0
                 d_JE = 0.0
             else:
-                d_UE_all = np.array([compute_distance(self.user_position[:2], ep) for ep in self.eve_positions])
-                d_JE_all = np.array([compute_distance(jammer_position[:2], ep) for ep in self.eve_positions])
-                nearest_idx = int(np.argmin(d_UE_all))
-                d_UE = float(d_UE_all[nearest_idx])
-                d_JE = float(d_JE_all[nearest_idx])
+                d_UE_all_nom = np.array([compute_distance(self.user_position[:2], ep) for ep in self.eve_positions])
+                nearest_idx = int(np.argmin(d_UE_all_nom))
+                d_UE = float(max(d_UE_all_nom[nearest_idx] - self.config.eve_uncertainty_radius, 0.0))
+                d_JE_nom = compute_distance(jammer_position[:2], self.eve_positions[nearest_idx])
+                d_JE = float(d_JE_nom + self.config.eve_uncertainty_radius)
         else:
-            d_UE = compute_distance(self.user_position, self.eve_position)
-            d_JE = compute_distance(jammer_position, self.eve_position)
+            d_UE_nom = compute_distance(self.user_position, self.eve_position)
+            d_JE_nom = compute_distance(jammer_position, self.eve_position)
+            d_UE = float(max(d_UE_nom - self.config.eve_uncertainty_radius, 0.0))
+            d_JE = float(d_JE_nom + self.config.eve_uncertainty_radius)
         return {
             "d_UR": d_UR,
             "d_RB": d_RB,

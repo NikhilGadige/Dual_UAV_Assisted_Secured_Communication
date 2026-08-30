@@ -2,8 +2,8 @@ This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2024) (preloaded forma
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
-**report_week9.tex
-(./report_week9.tex
+**report.tex
+(./report.tex
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-02-20>
 (/usr/local/texlive/2024/texmf-dist/tex/latex/ieeetran/IEEEtran.cls
@@ -428,8 +428,8 @@ File: l3backend-pdftex.def 2024-02-20 L3 backend support: PDF output (pdfTeX)
 \l__color_backend_stack_int=\count300
 \l__pdf_internal_box=\box60
 )
-(./report_week9.aux)
-\openout1 = `report_week9.aux'.
+(./report.aux)
+\openout1 = `report.aux'.
 
 LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 29.
 LaTeX Font Info:    ... okay on input line 29.
@@ -495,16 +495,16 @@ File: mt-ptm.cfg 2006/04/20 v1.7 microtype config. file: Times (RS)
 )
 Package hyperref Info: Link coloring OFF on input line 29.
 
-(./report_week9.out) (./report_week9.out)
+(./report.out) (./report.out)
 \@outlinefile=\write3
-\openout3 = `report_week9.out'.
+\openout3 = `report.out'.
 
 
 (/usr/local/texlive/2024/texmf-dist/tex/latex/microtype/mt-cmr.cfg
 File: mt-cmr.cfg 2013/05/19 v2.2 microtype config. file: Computer Modern Roman 
 (RS)
 )
-LaTeX Font Info:    Trying to load font information for U+msa on input line 67.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 48.
 
 
 (/usr/local/texlive/2024/texmf-dist/tex/latex/amsfonts/umsa.fd
@@ -513,7 +513,7 @@ File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 (/usr/local/texlive/2024/texmf-dist/tex/latex/microtype/mt-msa.cfg
 File: mt-msa.cfg 2006/02/04 v1.1 microtype config. file: AMS symbols (a) (RS)
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 67.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 48.
 
 
 (/usr/local/texlive/2024/texmf-dist/tex/latex/amsfonts/umsb.fd
@@ -523,21 +523,42 @@ File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 File: mt-msb.cfg 2005/06/01 v1.0 microtype config. file: AMS symbols (b) (RS)
 ) [1{/usr/local/texlive/2024/texmf-var/fonts/map/pdftex/updmap/pdftex.map}{/usr
 /local/texlive/2024/texmf-dist/fonts/enc/dvips/base/8r.enc}]
-<system-model.jpg, id=68, 1606.0pt x 939.51pt>
-File: system-model.jpg Graphic file (type jpg)
-<use system-model.jpg>
-Package pdftex.def Info: system-model.jpg  used on input line 78.
-(pdftex.def)             Requested size: 309.60315pt x 181.11786pt.
+<../system-model.jpeg, id=86, 1606.0pt x 1114.1625pt>
+File: ../system-model.jpeg Graphic file (type jpg)
+<use ../system-model.jpeg>
+Package pdftex.def Info: ../system-model.jpeg  used on input line 74.
+(pdftex.def)             Requested size: 516.0pt x 357.98434pt.
  [2
 pdfTeX warning (ext4): destination with the same identifier (name{figure.1}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.119 
-       <./system-model.jpg>] [3] [4]
-LaTeX Font Info:    Trying to load font information for OT1+pcr on input line 2
-48.
+l.93 \[
+        <../system-model.jpeg>] [3]
+Overfull \hbox (11.80229pt too wide) in paragraph at lines 171--173
+\OT1/ptm/m/n/10 (-20) where $\OML/cmm/m/it/10 g[] \OT1/cmr/m/n/10 = [][](\OML/c
+mm/m/it/10 d[]; ^^R[]\OT1/cmr/m/n/10 ) \OMS/cmsy/m/n/10 ^^A \OML/cmm/m/it/10 h[
+]$ \OT1/ptm/m/n/10 (-20) (with $\OML/cmm/m/it/10 h[]$ \OT1/ptm/m/n/10 (-20) rep
+-re-sent-ing small-scale fad-ing on the BS-RIS link) and $\OML/cmm/m/it/10 g[] 
+\OT1/cmr/m/n/10 = [][](\OML/cmm/m/it/10 d[]; ^^R[]\OT1/cmr/m/n/10 ) \OMS/cmsy/m
+/n/10 ^^A
+ []
 
+[4]
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 206.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `\gamma' on input line 206.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 206.
+
+LaTeX Font Info:    Trying to load font information for OT1+pcr on input line 2
+12.
 (/usr/local/texlive/2024/texmf-dist/tex/latex/psnfss/ot1pcr.fd
 File: ot1pcr.fd 2001/06/04 font definitions for OT1/pcr.
 )
@@ -545,49 +566,73 @@ Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `pcr' (encoding: OT1).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
-<output_final/rolling_secrecy_comparison.png, id=136, 722.7pt x 433.62pt>
-File: output_final/rolling_secrecy_comparison.png Graphic file (type png)
-<use output_final/rolling_secrecy_comparison.png>
-Package pdftex.def Info: output_final/rolling_secrecy_comparison.png  used on i
-nput line 288.
-(pdftex.def)             Requested size: 361.19843pt x 216.71683pt.
- [5
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 215.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `subscript' on input line 215.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 215.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 222.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `subscript' on input line 222.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 222.
+
+[5] [6] [7]
+<../final.jpg, id=168, 1266.7325pt x 735.74875pt>
+File: ../final.jpg Graphic file (type jpg)
+<use ../final.jpg>
+Package pdftex.def Info: ../final.jpg  used on input line 404.
+(pdftex.def)             Requested size: 516.0pt x 299.7055pt.
+ [8
 pdfTeX warning (ext4): destination with the same identifier (name{table.1}) has
  been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.292 
-      ] [6
+l.408 
+      ] [9
 pdfTeX warning (ext4): destination with the same identifier (name{figure.2}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.306 \end{document}
-                     <./output_final/rolling_secrecy_comparison.png>]
-(./report_week9.aux)
+l.414 \end{document}
+                     <../final.jpg>] (./report.aux)
  ***********
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-02-20>
  ***********
-Package rerunfilecheck Info: File `report_week9.out' has not changed.
-(rerunfilecheck)             Checksum: 000A3C6313BFF9C12FCEE6A02BCEDD0F;2847.
+Package rerunfilecheck Info: File `report.out' has not changed.
+(rerunfilecheck)             Checksum: 7F0A759A60741FA09F3D3875F0916C1D;4548.
  ) 
 Here is how much of TeX's memory you used:
- 13005 strings out of 474116
- 204913 string characters out of 5743682
- 1945187 words of memory out of 5000000
- 34919 multiletter control sequences out of 15000+600000
- 608557 words of font info for 242 fonts, out of 8000000 for 9000
+ 13100 strings out of 474116
+ 205790 string characters out of 5743682
+ 1944187 words of memory out of 5000000
+ 34939 multiletter control sequences out of 15000+600000
+ 612704 words of font info for 289 fonts, out of 8000000 for 9000
  1144 hyphenation exceptions out of 8191
- 75i,11n,79p,1792b,560s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,11n,79p,1606b,570s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb
-></usr/local/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx7.pfb><
-/usr/local/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></
-usr/local/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></u
-sr/local/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi5.pfb></usr
-/local/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi6.pfb></usr/l
-ocal/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi7.pfb></usr/loc
-al/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/local
+></usr/local/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb>
+</usr/local/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb><
+/usr/local/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi5.pfb></u
+sr/local/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi6.pfb></usr
+/local/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi7.pfb></usr/l
+ocal/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/loc
+al/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi9.pfb></usr/local
 /texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/local/t
 exlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pfb></usr/local/texl
 ive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb></usr/local/texlive
@@ -596,16 +641,15 @@ ive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb></usr/local/texlive
 4/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy6.pfb></usr/local/texlive/2024/
 texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb></usr/local/texlive/2024/te
 xmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb></usr/local/texlive/2024/texm
-f-dist/fonts/type1/public/amsfonts/symbols/msam10.pfb></usr/local/texlive/2024/
-texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb></usr/local/texlive/2
-024/texmf-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/local/texlive/2024/texm
-f-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive/2024/texmf-dist/fon
-ts/type1/urw/times/utmr8a.pfb></usr/local/texlive/2024/texmf-dist/fonts/type1/u
-rw/times/utmri8a.pfb>
-Output written on report_week9.pdf (6 pages, 581758 bytes).
+f-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb></usr/local/texlive/2024/
+texmf-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/local/texlive/2024/texmf-di
+st/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive/2024/texmf-dist/fonts/t
+ype1/urw/times/utmr8a.pfb></usr/local/texlive/2024/texmf-dist/fonts/type1/urw/t
+imes/utmri8a.pfb>
+Output written on report.pdf (9 pages, 715538 bytes).
 PDF statistics:
- 277 PDF objects out of 1000 (max. 8388607)
- 219 compressed objects within 3 object streams
- 72 named destinations out of 1000 (max. 500000)
- 59003 words of extra memory for PDF output out of 61914 (max. 10000000)
+ 298 PDF objects out of 1000 (max. 8388607)
+ 240 compressed objects within 3 object streams
+ 81 named destinations out of 1000 (max. 500000)
+ 59539 words of extra memory for PDF output out of 61914 (max. 10000000)
 
