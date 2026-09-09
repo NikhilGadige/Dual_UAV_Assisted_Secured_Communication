@@ -37,6 +37,8 @@ class Week9SystemModel:
         bandwidth_hz: float = 1e6,       # Bandwidth 1 MHz
         noise_power: float = 1e-10,      # Thermal noise (-70 dBm)
         eve_uncertainty_radius: float = 15.0,  # Uncertainty radius in meters
+        eavesdropper_combining: str = "selection",  # "selection" (worst-case SC) or "sum" (colluding)
+        enable_bistatic_sensing: bool = True,       # Enable monostatic + bistatic selection combining
     ):
         self.p_bs_tx = p_bs_tx
         self.p_jam_tx = p_jam_tx
@@ -44,6 +46,8 @@ class Week9SystemModel:
         self.bandwidth_hz = bandwidth_hz
         self.noise_power = noise_power
         self.eve_uncertainty_radius = eve_uncertainty_radius
+        self.eavesdropper_combining = eavesdropper_combining
+        self.enable_bistatic_sensing = enable_bistatic_sensing
 
         # Modules
         self.path_loss_model = ElevationPathLossModel(freq_hz=freq_hz)
@@ -141,8 +145,8 @@ class Week9SystemModel:
 
         # 5. Eavesdropper SINR evaluation (E1, E2, E3 intercepting signals)
         eavesdropper_results = {}
-        sum_r_e_far = 0.0
-        sum_r_e_near = 0.0
+        r_e_far_list = []
+        r_e_near_list = []
         for e_name in ["E1", "E2", "E3"]:
             pos_e = self.nodes[e_name].position
             g_cascaded_e = self.compute_cascaded_gain_uncertain(pos_bs, pos_r, pos_e, self.eve_uncertainty_radius)
@@ -163,8 +167,8 @@ class Week9SystemModel:
             r_e_far = self.nodes[e_name].compute_semantic_rate(sinr_e_far, bandwidth_hz=self.bandwidth_hz)
             r_e_near = self.nodes[e_name].compute_semantic_rate(sinr_e_near, bandwidth_hz=self.bandwidth_hz)
             
-            sum_r_e_far += r_e_far
-            sum_r_e_near += r_e_near
+            r_e_far_list.append(r_e_far)
+            r_e_near_list.append(r_e_near)
             
             eavesdropper_results[e_name] = {
                 "sinr_db": float(10.0 * np.log10(max(sinr_e_far, 1e-12))),
@@ -175,6 +179,14 @@ class Week9SystemModel:
                 "semantic_rate_near": r_e_near,
             }
 
+        # Eavesdropper wiretap leakage: Selection Combining (Eq 30, 31) vs Colluding Sum
+        if self.eavesdropper_combining == "selection":
+            leakage_far = float(np.max(r_e_far_list)) if r_e_far_list else 0.0
+            leakage_near = float(np.max(r_e_near_list)) if r_e_near_list else 0.0
+        else:
+            leakage_far = float(np.sum(r_e_far_list)) if r_e_far_list else 0.0
+            leakage_near = float(np.sum(r_e_near_list)) if r_e_near_list else 0.0
+
         # 6. Evaluate Semantic Metrics for Downlink (BS -> RIS R -> Target T & MobileUser U)
         near_metrics = self.nodes["T"].evaluate_metrics(
             noma_results["sinr_near"], bandwidth_hz=self.bandwidth_hz
@@ -183,9 +195,9 @@ class Week9SystemModel:
             noma_results["sinr_far"], bandwidth_hz=self.bandwidth_hz
         )
 
-        # 6a. Average Secrecy Rate (ASR) Evaluation
-        r_sec_t = max(near_metrics.semantic_rate_suts - sum_r_e_near, 0.0)
-        r_sec_u = max(far_metrics.semantic_rate_suts - sum_r_e_far, 0.0)
+        # 6a. Average Secrecy Rate (ASR) Evaluation (Eq 30, 31)
+        r_sec_t = max(near_metrics.semantic_rate_suts - leakage_near, 0.0)
+        r_sec_u = max(far_metrics.semantic_rate_suts - leakage_far, 0.0)
         r_sec_total = r_sec_t + r_sec_u
 
         # 7. Target T Active Communication (Uplink V2I to BS via RIS R, and V2X to Mobile User U)
@@ -204,10 +216,20 @@ class Week9SystemModel:
         sinr_t_v2x = (p_t_tx * g_t_user) / max(jamming_power_far + self.noise_power, 1e-12)
         t_v2x_metrics = self.nodes["T"].evaluate_metrics(sinr_t_v2x, bandwidth_hz=self.bandwidth_hz)
 
-        # 8. Monostatic Radar Sensing at UAV Jammer J
+        # 8. Radar Sensing at UAV Jammer J (Monostatic + Bistatic Selection Combining)
         g_jt = self.path_loss_model.compute_channel_gain(pos_j, pos_t)
         radar_processing_gain = 1e7
-        snr_radar_t = (self.p_jam_tx * (g_jt ** 2) * radar_processing_gain) / self.noise_power
+        snr_mono_t = (self.p_jam_tx * (g_jt ** 2) * radar_processing_gain) / self.noise_power
+        if self.enable_bistatic_sensing:
+            g_bt = self.path_loss_model.compute_channel_gain(pos_bs, pos_t)
+            snr_bi_t = (self.p_bs_tx * g_bt * g_jt * radar_processing_gain) / self.noise_power
+            snr_radar_t = max(snr_mono_t, snr_bi_t)
+            t_selected_branch = "monostatic" if snr_mono_t >= snr_bi_t else "bistatic"
+        else:
+            snr_radar_t = snr_mono_t
+            snr_bi_t = 0.0
+            t_selected_branch = "monostatic"
+
         sensing_acc_t = self.nodes["J"].compute_sensing_accuracy(snr_radar_t)
         crb_t = self.nodes["J"].compute_crb(snr_radar_t)
 
@@ -217,11 +239,26 @@ class Week9SystemModel:
             g_je = self.path_loss_model.compute_channel_gain_uncertain(
                 pos_j, pos_e, self.eve_uncertainty_radius, maximize=False
             )
-            snr_radar_e = (self.p_jam_tx * (g_je ** 2) * radar_processing_gain) / self.noise_power
+            snr_mono_e = (self.p_jam_tx * (g_je ** 2) * radar_processing_gain) / self.noise_power
+            if self.enable_bistatic_sensing:
+                g_be = self.path_loss_model.compute_channel_gain_uncertain(
+                    pos_bs, pos_e, self.eve_uncertainty_radius, maximize=False
+                )
+                snr_bi_e = (self.p_bs_tx * g_be * g_je * radar_processing_gain) / self.noise_power
+                snr_radar_e = max(snr_mono_e, snr_bi_e)
+                e_selected_branch = "monostatic" if snr_mono_e >= snr_bi_e else "bistatic"
+            else:
+                snr_radar_e = snr_mono_e
+                snr_bi_e = 0.0
+                e_selected_branch = "monostatic"
+
             acc_e = self.nodes["J"].compute_sensing_accuracy(snr_radar_e)
             crb_e = self.nodes["J"].compute_crb(snr_radar_e)
             sensing_e_results[e_name] = {
                 "snr_db": float(10.0 * np.log10(max(snr_radar_e, 1e-12))),
+                "snr_mono_db": float(10.0 * np.log10(max(snr_mono_e, 1e-12))),
+                "snr_bi_db": float(10.0 * np.log10(max(snr_bi_e, 1e-12))),
+                "selected_branch": e_selected_branch,
                 "sensing_accuracy": float(acc_e),
                 "crb": float(crb_e)
             }
@@ -264,6 +301,9 @@ class Week9SystemModel:
             "sensing_performance": {
                 "Target_T": {
                     "snr_db": float(10.0 * np.log10(max(snr_radar_t, 1e-12))),
+                    "snr_mono_db": float(10.0 * np.log10(max(snr_mono_t, 1e-12))),
+                    "snr_bi_db": float(10.0 * np.log10(max(snr_bi_t, 1e-12))),
+                    "selected_branch": t_selected_branch,
                     "sensing_accuracy": float(sensing_acc_t),
                     "crb": float(crb_t),
                 },
@@ -273,6 +313,9 @@ class Week9SystemModel:
                 "secrecy_rate_target": r_sec_t,
                 "secrecy_rate_user": r_sec_u,
                 "secrecy_rate_total": r_sec_total,
+                "eavesdropper_combining": self.eavesdropper_combining,
+                "leakage_near": leakage_near,
+                "leakage_far": leakage_far,
             },
             "eavesdroppers": eavesdropper_results,
         }

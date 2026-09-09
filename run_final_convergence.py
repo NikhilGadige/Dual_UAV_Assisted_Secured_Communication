@@ -22,6 +22,8 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 # Insert the Week 9 work directory into path
@@ -59,7 +61,7 @@ def compute_assr_pd_utility(secrecy_vals, pd_target_vals, pd_eaves_vals, crb_tar
     assr_vals = np.clip(secrecy_arr / r_ref, 0.0, 1.0)
     pd_combined_vals = LAMBDA1_PD_SENSING * pd_eaves_arr + LAMBDA2_PD_SENSING * pd_target_arr
     crb_feasible_vals = (crb_target_arr <= CRB_THRESHOLD).astype(float)
-    utility_vals = (LAMBDA1_ASSR * assr_vals + LAMBDA2_PD * pd_combined_vals) * crb_feasible_vals
+    utility_vals = LAMBDA1_ASSR * assr_vals + LAMBDA2_PD * pd_combined_vals
     return assr_vals, pd_combined_vals, utility_vals, crb_feasible_vals, r_ref
 
 # Set seed for reproducibility
@@ -72,15 +74,19 @@ def set_seed(seed=42):
 
 # --- 1. Custom Gymnasium-Style Environment for Week 9 System Model ---
 class Week9ISACEnv:
-    def __init__(self, seed=42, eve_uncertainty_radius=15.0):
+    def __init__(self, seed=42, eve_uncertainty_radius=15.0, eavesdropper_combining="selection", enable_bistatic_sensing=True):
         self.sys_model = Week9SystemModel(
             p_bs_tx=2.0,
             p_jam_tx=0.5,
             n_ris_elements=64,
             noma_a_far=0.7,
             eve_uncertainty_radius=eve_uncertainty_radius,
+            eavesdropper_combining=eavesdropper_combining,
+            enable_bistatic_sensing=enable_bistatic_sensing,
         )
         self.eve_uncertainty_radius = eve_uncertainty_radius
+        self.eavesdropper_combining = eavesdropper_combining
+        self.enable_bistatic_sensing = enable_bistatic_sensing
         self.lambda1_pd = LAMBDA1_PD_SENSING
         self.lambda2_pd = LAMBDA2_PD_SENSING
         self.seed = seed
@@ -237,9 +243,9 @@ class Week9ISACEnv:
         pd_combined = float(self.lambda1_pd * pd_eaves + self.lambda2_pd * pd_target)
 
         # Shared objective for every algorithm:
-        # reward = (0.5 * ASSR + 0.5 * Pd) with CRB as a feasibility constraint.
+        # reward = (0.5 * ASSR + 0.5 * Pd), with CRB treated as a constraint definition.
         crb_satisfied = crb_target <= CRB_THRESHOLD
-        reward = float((LAMBDA1_ASSR * assr + LAMBDA2_PD * pd_combined) * float(crb_satisfied))
+        reward = float(LAMBDA1_ASSR * assr + LAMBDA2_PD * pd_combined)
 
         pd_satisfied = pd_target >= 0.0 and all(eve["sensing_accuracy"] >= 0.0 for eve in results["sensing_performance"]["Eavesdroppers"].values())
         joint_satisfied = crb_satisfied and pd_satisfied
@@ -286,7 +292,7 @@ class ReplayBuffer:
 
 # --- 3. Neural Network Architectures ---
 class DeterministicActor(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_dim=64):
+    def __init__(self, state_dim, action_dim, hidden_dim=128):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(state_dim, hidden_dim),
@@ -300,7 +306,7 @@ class DeterministicActor(nn.Module):
         return self.net(state)
 
 class GaussianActor(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_dim=64):
+    def __init__(self, state_dim, action_dim, hidden_dim=128):
         super().__init__()
         self.trunk = nn.Sequential(
             nn.Linear(state_dim, hidden_dim),
@@ -336,7 +342,7 @@ class GaussianActor(nn.Module):
         return torch.tanh(mean)
 
 class QNetwork(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_dim=64):
+    def __init__(self, state_dim, action_dim, hidden_dim=128):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(state_dim + action_dim, hidden_dim),
@@ -349,7 +355,7 @@ class QNetwork(nn.Module):
         return self.net(torch.cat([state, action], dim=-1))
 
 class ValueNetwork(nn.Module):
-    def __init__(self, state_dim, hidden_dim=64):
+    def __init__(self, state_dim, hidden_dim=128):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(state_dim, hidden_dim),
@@ -453,7 +459,7 @@ def plot_individual_convergence(history, algo_name):
     plt.plot(episodes, utility_roll, color='purple', linewidth=2, label='Rolling 100 Combined Utility')
     plt.title(f'{algo_name} Combined Utility Convergence')
     plt.xlabel('Episode')
-    plt.ylabel(r'Utility (($0.5$ ASSR $+\ 0.5$ Pd) $\times$ CRB-feasible)')
+    plt.ylabel(r'Utility ($0.5$ ASSR $+\ 0.5$ Pd)')
     plt.grid(True)
     plt.legend()
     
@@ -511,8 +517,8 @@ def train_satd3pg(env, num_episodes=150, steps_per_episode=50):
     
     # Hyperparameters
     batch_size = 64
-    gamma = 0.95
-    tau = 0.01
+    gamma = 0.99
+    tau = 1e-3
     policy_noise = 0.2
     noise_clip = 0.5
     policy_freq = 2
@@ -640,8 +646,8 @@ def train_sasac(env, num_episodes=150, steps_per_episode=50):
     
     # Hyperparameters
     batch_size = 64
-    gamma = 0.95
-    tau = 0.01
+    gamma = 0.99
+    tau = 1e-3
     alpha_entropy = 0.2  # Fixed entropy scale
     
     # Models
@@ -758,8 +764,8 @@ def train_matd3pg(env, num_episodes=150, steps_per_episode=50):
     
     # Hyperparameters
     batch_size = 64
-    gamma = 0.95
-    tau = 0.01
+    gamma = 0.99
+    tau = 1e-3
     policy_noise = 0.2
     noise_clip = 0.5
     policy_freq = 2
@@ -939,7 +945,7 @@ def train_mappo(env, num_episodes=150, steps_per_episode=50, episodes_per_update
     critic_opt = optim.Adam(critic.parameters(), lr=critic_lr)
 
     # MAPPO Hyperparameters
-    gamma = 0.95
+    gamma = 0.99
     gae_lambda = 0.95
     ppo_epochs = 5
     batch_size = 64
@@ -1233,7 +1239,7 @@ def generate_comparison_plots(mappo_hist, matd3pg_hist, sac_hist, td3pg_hist, rw
         pd_combined_vals = LAMBDA1_PD_SENSING * pd_eaves_vals + LAMBDA2_PD_SENSING * pd_target_vals
         crb_feasible_vals = (crb_target_vals <= CRB_THRESHOLD).astype(float)
 
-        utility_vals = (LAMBDA1_ASSR * assr_vals + LAMBDA2_PD * pd_combined_vals) * crb_feasible_vals
+        utility_vals = LAMBDA1_ASSR * assr_vals + LAMBDA2_PD * pd_combined_vals
         roll_vals = rolling_average(utility_vals, 100)
 
         linestyle = '--' if name == 'Random Walk' else '-'
@@ -1242,7 +1248,7 @@ def generate_comparison_plots(mappo_hist, matd3pg_hist, sac_hist, td3pg_hist, rw
 
     plt.title('Combined Utility Convergence Comparison (Rolling 100)')
     plt.xlabel('Episode')
-    plt.ylabel(r'Utility (($0.5$ ASSR $+\ 0.5$ Pd) $\times$ CRB-feasible)')
+    plt.ylabel(r'Utility ($0.5$ ASSR $+\ 0.5$ Pd)')
     plt.ylim(-0.05, 1.05)
     plt.grid(True)
     plt.legend(loc='best')

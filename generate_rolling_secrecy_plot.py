@@ -15,6 +15,8 @@ optimization objective, not raw secrecy rate alone:
 
 import os
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -65,14 +67,14 @@ for name, (filename, color) in algos.items():
 
     pd_combined = W3_PD_EAVES * df["pd_eaves"] + W4_PD_TARGET * df["pd_target"]
     crb_feasible = (df["crb_target"] <= CRB_THRESHOLD).astype(float)
-    utility = (LAMBDA1_ASSR * assr + LAMBDA2_PD * pd_combined) * crb_feasible
+    utility = LAMBDA1_ASSR * assr + LAMBDA2_PD * pd_combined
 
     rolling_utility = utility.rolling(window=ROLLING_WINDOW, min_periods=1).mean()
     plt.plot(df["episode"], rolling_utility, label=name, color=color, linewidth=2)
 
 plt.title("Convergence Comparison: Rolling 100 Average Multi-Objective Utility")
 plt.xlabel("Episode")
-plt.ylabel(r"Rolling Avg Utility (($\lambda_1$ ASSR $+\ \lambda_2\ P_d$) $\times$ CRB-feasible)")
+plt.ylabel(r"Rolling Avg Utility ($\lambda_1$ ASSR $+\ \lambda_2\ P_d$)")
 plt.grid(True)
 plt.legend()
 

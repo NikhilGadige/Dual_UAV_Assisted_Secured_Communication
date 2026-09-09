@@ -68,12 +68,21 @@ $$s = \sqrt{a_N P_B} s_N + \sqrt{a_F P_B} s_F \quad (a_F + a_N = 1, \; a_F > a_N
   $$R_{\text{sem}} = B \cdot \left(\frac{M}{K}\right) \cdot S(\text{SINR}) \cdot \log_2(1 + \text{SINR})$$
   *(where $M$ is semantic concepts, $K$ is channel symbols, $B$ is bandwidth)*
 
-- **Semantic Sensing Accuracy $A_{\text{sensing}, k}$**:
-  Evaluated for both the Target ($k = T$) and Eavesdroppers ($k = E_i$) via direct monostatic sensing at UAV Jammer $J$:
-  $$\text{SNR}_{\text{radar}, k} = \frac{P_J \cdot g_{J, k}^2}{\sigma^2}$$
-  $$A_{\text{sensing}, k} = \frac{1}{1 + \exp\left(-\kappa (\text{SNR}_{\text{radar}, k, \text{dB}} - \tau)\right)}$$
+- **Semantic Sensing Accuracy $A_{\text{sensing}, k}$ & Selection Combining**:
+  Evaluated for both the Target ($k = T$) and Eavesdroppers ($k = E_i$) via Selection Combining (SC) between the monostatic echo ($J \to k \to J$) and the bistatic echo ($B \to k \to J$):
+  $$\text{SNR}_{\text{mono}, k} = \frac{P_{J, \text{sense}} \cdot g_{J, k}^2 \cdot G_p}{\sigma^2}, \qquad \text{SNR}_{\text{bi}, k} = \frac{P_{BS} \cdot g_{B, k} g_{J, k} \cdot G_p}{\sigma^2}$$
+  $$\text{SNR}_{\text{radar}, k} = \max\left(\text{SNR}_{\text{mono}, k}, \, \text{SNR}_{\text{bi}, k}\right)$$
+  $$A_{\text{sensing}, k} = \frac{1}{1 + \exp\left(-\kappa (\text{SNR}_{\text{radar}, k, \text{dB}} - \tau_{\text{radar}})\right)}$$
 
----
+- **Average Secrecy Rate under Selection Combining (Eq. 30–33)**:
+  Under Selection Combining (worst-case non-colluding eavesdropper), secrecy rate is governed by the highest wiretap rate:
+  $$R_{\text{sec}, T} = \left[ R_{\text{sem}, T} - \max_{e \in \{E_1, E_2, E_3\}} R_{\text{sem}, E_e, T} \right]^+$$
+  $$R_{\text{sec}, U} = \left[ R_{\text{sem}, U} - \max_{e \in \{E_1, E_2, E_3\}} R_{\text{sem}, E_e, U} \right]^+$$
+
+### D. Reinforcement Learning Hyperparameters
+- **Target Soft Update Rate ($\tau$)**: $10^{-3} = 0.001$ (SATD3PG, SASAC, MATD3PG)
+- **Discount Factor ($\gamma$)**: $0.99$
+- **Network Hidden Layers**: 2 hidden layers with $128$ units each across all actor, critic, and value networks.
 
 ## 3. Directory Structure
 ```

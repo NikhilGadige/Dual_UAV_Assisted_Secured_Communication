@@ -108,10 +108,10 @@ def test_system_model_integration():
         
     print("\n--- Sensing Performance at UAV Jammer J ---")
     sense = results["sensing_performance"]
-    print(f"  Target T - SNR: {sense['Target_T']['snr_db']:.2f} dB | Sensing Accuracy: {sense['Target_T']['sensing_accuracy']:.4f} | CRB: {sense['Target_T']['crb']:.4f}")
+    print(f"  Target T - SNR: {sense['Target_T']['snr_db']:.2f} dB (Mono: {sense['Target_T']['snr_mono_db']:.2f} dB, Bi: {sense['Target_T']['snr_bi_db']:.2f} dB, Selected: {sense['Target_T']['selected_branch']}) | Sensing Accuracy: {sense['Target_T']['sensing_accuracy']:.4f} | CRB: {sense['Target_T']['crb']:.4f}")
     print("  Eavesdroppers:")
     for eve, metrics in sense["Eavesdroppers"].items():
-        print(f"    {eve} - SNR: {metrics['snr_db']:.2f} dB | Sensing Accuracy: {metrics['sensing_accuracy']:.4f} | CRB: {metrics['crb']:.4f}")
+        print(f"    {eve} - SNR: {metrics['snr_db']:.2f} dB (Mono: {metrics['snr_mono_db']:.2f} dB, Bi: {metrics['snr_bi_db']:.2f} dB, Selected: {metrics['selected_branch']}) | Sensing Accuracy: {metrics['sensing_accuracy']:.4f} | CRB: {metrics['crb']:.4f}")
 
     print("\n--- Eavesdropper Performance ---")
     for eve, metrics in results["eavesdroppers"].items():
@@ -121,8 +121,9 @@ def test_system_model_integration():
         
     print("\n--- Average Secrecy Rate (ASR) Performance (Single Realization) ---")
     sec = results["secrecy_performance"]
-    print(f"  Target T Secrecy Rate: {sec['secrecy_rate_target']:.2e} suts/s")
-    print(f"  Mobile User U Secrecy Rate: {sec['secrecy_rate_user']:.2e} suts/s")
+    print(f"  Combining Mode: {sec['eavesdropper_combining']}")
+    print(f"  Target T Secrecy Rate: {sec['secrecy_rate_target']:.2e} suts/s (Leakage: {sec['leakage_near']:.2e} suts/s)")
+    print(f"  Mobile User U Secrecy Rate: {sec['secrecy_rate_user']:.2e} suts/s (Leakage: {sec['leakage_far']:.2e} suts/s)")
     print(f"  Total System Secrecy Rate: {sec['secrecy_rate_total']:.2e} suts/s")
         
     print("\n--- Average Secrecy Rate (ASR) Over 100 Episodes ---")
@@ -151,8 +152,40 @@ def test_system_model_integration():
         
     print("\n-> Integrated System Model Test PASSED Successfully!\n")
 
+def test_selection_combining():
+    print("=== 5. Testing Selection Combining Modes ===")
+    model_sc = Week9SystemModel(eavesdropper_combining="selection", enable_bistatic_sensing=True)
+    model_sum = Week9SystemModel(eavesdropper_combining="sum", enable_bistatic_sensing=False)
+    
+    res_sc = model_sc.evaluate_system()
+    res_sum = model_sum.evaluate_system()
+    
+    # 1. Verify eavesdropper selection combining
+    sec_sc = res_sc["secrecy_performance"]
+    r_near_e = [e["semantic_rate_near"] for e in res_sc["eavesdroppers"].values()]
+    r_far_e = [e["semantic_rate"] for e in res_sc["eavesdroppers"].values()]
+    
+    print(f"  Eavesdropper Near Leakage Rates: {[f'{r:.2e}' for r in r_near_e]}")
+    print(f"  Selected Max Leakage Near (SC):  {sec_sc['leakage_near']:.2e}")
+    assert abs(sec_sc["leakage_near"] - max(r_near_e)) < 1e-12, "SC leakage must match max of eve rates"
+    assert abs(sec_sc["leakage_far"] - max(r_far_e)) < 1e-12, "SC leakage must match max of eve rates"
+    
+    # 2. Verify radar selection combining
+    sense_sc = res_sc["sensing_performance"]["Target_T"]
+    print(f"  Target Sensing SNR (SC):         {sense_sc['snr_db']:.2f} dB (branch={sense_sc['selected_branch']})")
+    print(f"  Target Mono SNR:                 {sense_sc['snr_mono_db']:.2f} dB")
+    print(f"  Target Bi SNR:                   {sense_sc['snr_bi_db']:.2f} dB")
+    assert sense_sc["snr_db"] >= sense_sc["snr_mono_db"] - 1e-9, (
+        "Radar selection combining SNR must be >= monostatic SNR"
+    )
+    assert sense_sc["snr_db"] >= sense_sc["snr_bi_db"] - 1e-9, (
+        "Radar selection combining SNR must be >= bistatic SNR"
+    )
+    print("  -> Selection Combining Verification PASSED!\n")
+
 if __name__ == "__main__":
     test_elevation_path_loss()
     test_pd_noma()
     test_semantic_nodes()
     test_system_model_integration()
+    test_selection_combining()
