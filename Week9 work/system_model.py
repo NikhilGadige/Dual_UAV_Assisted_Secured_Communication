@@ -35,7 +35,8 @@ class Week9SystemModel:
         noma_a_far: float = 0.7,         # Power allocation factor for far user (a_F)
         freq_hz: float = 2.4e9,          # Carrier frequency 2.4 GHz
         bandwidth_hz: float = 1e6,       # Bandwidth 1 MHz
-        noise_power: float = 1e-10,      # Thermal noise (-70 dBm)
+        noise_power: float = 1e-13,      # Thermal noise (-100 dBm for 1 MHz)
+        jam_null_leakage: float = 1e-4,  # Spatial nulling leakage to legitimate nodes (-40 dB)
         eve_uncertainty_radius: float = 15.0,  # Uncertainty radius in meters
         eavesdropper_combining: str = "selection",  # "selection" (worst-case SC) or "sum" (colluding)
         enable_bistatic_sensing: bool = True,       # Enable monostatic + bistatic selection combining
@@ -45,6 +46,7 @@ class Week9SystemModel:
         self.n_ris_elements = n_ris_elements
         self.bandwidth_hz = bandwidth_hz
         self.noise_power = noise_power
+        self.jam_null_leakage = jam_null_leakage
         self.eve_uncertainty_radius = eve_uncertainty_radius
         self.eavesdropper_combining = eavesdropper_combining
         self.enable_bistatic_sensing = enable_bistatic_sensing
@@ -129,11 +131,12 @@ class Week9SystemModel:
         g_total_far = g_cascaded_far
 
         # 3. Jamming Interference from UAV Jammer (J)
+        # Apply Null-Space (NS) beamforming: jamming interference is spatially nulled towards legitimate nodes T and U
         g_jam_t = self.path_loss_model.compute_channel_gain(pos_j, pos_t)
         g_jam_u = self.path_loss_model.compute_channel_gain(pos_j, pos_u)
 
-        jamming_power_near = self.p_jam_tx * g_jam_t
-        jamming_power_far = self.p_jam_tx * g_jam_u
+        jamming_power_near = self.p_jam_tx * g_jam_t * self.jam_null_leakage
+        jamming_power_far = self.p_jam_tx * g_jam_u * self.jam_null_leakage
 
         # 4. Power Domain NOMA Evaluation with semantic SIC parameters
         noma_results = self.noma_engine.compute_sinr(
@@ -153,6 +156,7 @@ class Week9SystemModel:
             g_jam_e = self.path_loss_model.compute_channel_gain_uncertain(
                 pos_j, pos_e, self.eve_uncertainty_radius, maximize=False
             )
+            # Full directional jamming power directed towards eavesdroppers (no nulling)
             p_jam_e = self.p_jam_tx * g_jam_e
             
             # Eavesdropper tries to decode far user signal s_F (Mobile User U)
@@ -206,7 +210,7 @@ class Week9SystemModel:
         # Target -> RIS R -> BS Uplink Cascaded Channel Gain
         g_t_ris_bs = self.compute_cascaded_gain(pos_t, pos_r, pos_bs)
         g_jam_bs = self.path_loss_model.compute_channel_gain(pos_j, pos_bs)
-        jamming_power_bs = self.p_jam_tx * g_jam_bs
+        jamming_power_bs = self.p_jam_tx * g_jam_bs * self.jam_null_leakage
         
         sinr_t_uplink = (p_t_tx * g_t_ris_bs) / max(jamming_power_bs + self.noise_power, 1e-12)
         t_uplink_metrics = self.nodes["T"].evaluate_metrics(sinr_t_uplink, bandwidth_hz=self.bandwidth_hz)
@@ -218,7 +222,7 @@ class Week9SystemModel:
 
         # 8. Radar Sensing at UAV Jammer J (Monostatic + Bistatic Selection Combining)
         g_jt = self.path_loss_model.compute_channel_gain(pos_j, pos_t)
-        radar_processing_gain = 1e7
+        radar_processing_gain = 1e4
         snr_mono_t = (self.p_jam_tx * (g_jt ** 2) * radar_processing_gain) / self.noise_power
         if self.enable_bistatic_sensing:
             g_bt = self.path_loss_model.compute_channel_gain(pos_bs, pos_t)
